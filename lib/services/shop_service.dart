@@ -65,10 +65,16 @@ class ShopService {
     required String shopId,
     required int pricePerPerson,
     required String openingHours,
+    required String image,
+    required String location,
+    required String phone,
   }) {
     return _firestore.collection('shops').doc(shopId).update({
       'pricePerPerson': pricePerPerson,
       'openingHours': openingHours.trim(),
+      'image': image.trim(),
+      'location': location.trim(),
+      'phone': phone.trim(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

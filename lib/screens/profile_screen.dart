@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/account_service.dart';
+import '../services/app_content_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -404,135 +406,27 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Center(
-              child: Text(
-                'เวอร์ชั่นแอป 1.0.0',
-                style: TextStyle(color: theme.disabledColor),
+              child: FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder:
+                    (context, snapshot) => Text(
+                      'เวอร์ชันแอป ${snapshot.data?.version ?? '-'}',
+                      style: TextStyle(color: theme.disabledColor),
+                    ),
               ),
             ),
             const SizedBox(height: 24),
-            ListTile(
-              leading: const Icon(Icons.help_outline),
-              title: Text('การช่วยเหลือ', style: TextStyle(color: textColor)),
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder:
-                      (_) => AlertDialog(
-                        backgroundColor: cardColor,
-                        title: Text(
-                          'ช่วยเหลือ',
-                          style: TextStyle(color: textColor),
-                        ),
-                        content: Text(
-                          'ติดต่อทีมงานได้ที่ support@shabuq.com',
-                          style: TextStyle(color: textColor),
-                        ),
-                        actions: [
-                          TextButton(
-                            child: Text(
-                              'ปิด',
-                              style: TextStyle(color: textColor),
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ],
-                      ),
-                );
-              },
-            ),
-            // ข้อกำหนดและเงื่อนไขการใช้งาน
-            ListTile(
-              leading: const Icon(Icons.article_outlined),
-              title: Text(
-                'ข้อกำหนดและเงื่อนไขการใช้งาน',
-                style: TextStyle(color: textColor),
+            // หน้าข้อความ แอดมินแก้ได้จากหน้า Super Admin
+            for (final (page, icon) in [
+              (AppContentPage.help, Icons.help_outline),
+              (AppContentPage.terms, Icons.article_outlined),
+              (AppContentPage.privacy, Icons.privacy_tip_outlined),
+            ])
+              ListTile(
+                leading: Icon(icon),
+                title: Text(page.title, style: TextStyle(color: textColor)),
+                onTap: () => _showContentPage(context, page),
               ),
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder:
-                      (_) => AlertDialog(
-                        backgroundColor: cardColor,
-                        title: Text(
-                          'ข้อกำหนดและเงื่อนไขการใช้งาน',
-                          style: TextStyle(color: textColor),
-                        ),
-                        content: SingleChildScrollView(
-                          child: Text(
-                            'ข้อกำหนดและเงื่อนไขการใช้งาน\n\n'
-                            '1. ผู้ใช้ต้องปฏิบัติตามกฎระเบียบของแอปพลิเคชัน\n'
-                            '2. ห้ามใช้แอปเพื่อวัตถุประสงค์ที่ผิดกฎหมายหรือสร้างความเสียหาย\n'
-                            '3. ข้อมูลส่วนตัวของผู้ใช้จะถูกเก็บรักษาอย่างปลอดภัย\n'
-                            '4. แอปขอสงวนสิทธิ์ในการเปลี่ยนแปลงข้อกำหนดโดยไม่ต้องแจ้งให้ทราบล่วงหน้า\n'
-                            '5. การใช้งานแอปถือว่าผู้ใช้ยอมรับข้อกำหนดทั้งหมด\n'
-                            '6. หากมีข้อสงสัย กรุณาติดต่อทีมงาน\n'
-                            '7. ข้อกำหนดเพิ่มเติมสามารถดูได้ที่เว็บไซต์ของเรา\n'
-                            '8. การละเมิดข้อกำหนดอาจนำไปสู่การระงับบัญชี\n'
-                            '9. แอปไม่รับผิดชอบต่อความเสียหายที่เกิดจากการใช้งาน\n'
-                            '10. ผู้ใช้ควรตรวจสอบข้อกำหนดเป็นระยะ\n',
-                            style: TextStyle(color: textColor),
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            child: Text(
-                              'ปิด',
-                              style: TextStyle(color: textColor),
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ],
-                      ),
-                );
-              },
-            ),
-            // นโยบายความเป็นส่วนตัว
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: Text(
-                'นโยบายความเป็นส่วนตัว',
-                style: TextStyle(color: textColor),
-              ),
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder:
-                      (_) => AlertDialog(
-                        backgroundColor: cardColor,
-                        title: Text(
-                          'นโยบายความเป็นส่วนตัว',
-                          style: TextStyle(color: textColor),
-                        ),
-                        content: SingleChildScrollView(
-                          child: Text(
-                            'นโยบายความเป็นส่วนตัว\n\n'
-                            'เราให้ความสำคัญกับข้อมูลส่วนตัวของผู้ใช้:\n'
-                            '- ข้อมูลที่เก็บรวบรวมจะใช้เพื่อปรับปรุงบริการเท่านั้น\n'
-                            '- เราจะไม่เปิดเผยข้อมูลส่วนตัวแก่บุคคลที่สามโดยไม่ได้รับอนุญาต\n'
-                            '- ผู้ใช้สามารถร้องขอให้ลบหรือแก้ไขข้อมูลส่วนตัวได้\n'
-                            '- ข้อมูลจะถูกเก็บรักษาอย่างปลอดภัยตามมาตรฐานสากล\n'
-                            '- หากมีการเปลี่ยนแปลงนโยบายจะแจ้งให้ผู้ใช้ทราบ\n'
-                            '- ผู้ใช้สามารถติดต่อสอบถามเกี่ยวกับข้อมูลส่วนตัวได้ที่ support@shabuq.com\n'
-                            '- การใช้งานแอปถือว่าผู้ใช้ยอมรับนโยบายนี้\n'
-                            '- ข้อมูลการใช้งานจะถูกนำไปวิเคราะห์เพื่อปรับปรุงประสบการณ์ผู้ใช้\n'
-                            '- เราใช้เทคโนโลยีเพื่อป้องกันการเข้าถึงข้อมูลโดยไม่ได้รับอนุญาต\n'
-                            '- หากพบการละเมิดความเป็นส่วนตัว กรุณาแจ้งทีมงานทันที\n',
-                            style: TextStyle(color: textColor),
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            child: Text(
-                              'ปิด',
-                              style: TextStyle(color: textColor),
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ],
-                      ),
-                );
-              },
-            ),
             // ตั้งค่าบัญชีผู้ใช้
             ListTile(
               leading: const Icon(Icons.settings),
@@ -571,6 +465,29 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  void _showContentPage(BuildContext context, AppContentPage page) {
+    showDialog(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: Text(page.title),
+            content: StreamBuilder<String>(
+              stream: AppContentService().watch(page),
+              builder:
+                  (context, snapshot) => SingleChildScrollView(
+                    child: Text(snapshot.data ?? page.defaultBody),
+                  ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('ปิด'),
+              ),
+            ],
+          ),
     );
   }
 

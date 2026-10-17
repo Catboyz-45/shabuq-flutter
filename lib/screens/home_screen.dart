@@ -1,16 +1,12 @@
 // Import packages และหน้าจอที่เกี่ยวข้อง
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../services/banner_service.dart';
 import '../services/shop_service.dart';
 import '../widgets/shop_image.dart';
 import 'shop_screen.dart';
-
-// รายการรูปภาพโปรโมชั่นที่ใช้ใน banner
-final bannerImages = [
-  'assets/images/promotion/pho_promotion.jpeg',
-  'assets/images/promotion/wiyaki_promotion.jpeg',
-  'assets/images/promotion/teenoi_promotion.jpg',
-];
 
 // หน้าหลักของแอป
 class HomeScreen extends StatefulWidget {
@@ -22,29 +18,59 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ShopService _shopService = ShopService();
+  // แบนเนอร์มาจาก Firestore แอดมินเพิ่ม/แก้ได้จากหน้า Super Admin
+  late final Stream<List<PromoBanner>> _banners = BannerService().watchBanners();
+  late final Stream<List<Map<String, dynamic>>> _shops = _shopService
+      .watchShops();
   final PageController _bannerController =
       PageController(); // ควบคุมการเลื่อน banner
   int _bannerIndex = 0; // ตำแหน่งปัจจุบันของ banner
+  int _bannerCount = 0;
+  Timer? _bannerTimer;
 
   @override
   void initState() {
     super.initState();
-    // เริ่มเลื่อน banner อัตโนมัติหลังจาก 3 วินาที
-    Future.delayed(const Duration(seconds: 3), _autoScrollBanner);
+    // เลื่อน banner อัตโนมัติทุก 3 วินาที
+    _bannerTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _autoScrollBanner(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _bannerTimer?.cancel();
+    _bannerController.dispose();
+    super.dispose();
   }
 
   // ฟังก์ชันเลื่อน banner แบบวนลูป
   void _autoScrollBanner() {
-    if (!mounted) return;
-    setState(() {
-      _bannerIndex = (_bannerIndex + 1) % bannerImages.length;
-      _bannerController.animateToPage(
-        _bannerIndex,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
-    });
-    Future.delayed(const Duration(seconds: 3), _autoScrollBanner);
+    if (!mounted || _bannerCount < 2 || !_bannerController.hasClients) {
+      return;
+    }
+    _bannerController.animateToPage(
+      (_bannerIndex + 1) % _bannerCount,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  Future<void> _openShop(Map<String, dynamic> shop) async {
+    final tabs = DefaultTabController.maybeOf(context);
+    final booked = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => ShopScreen(shopInfo: shop)),
+    );
+    // แท็บที่ 2 คือ "คิวของฉัน"
+    if (booked == true) tabs?.animateTo(1);
+  }
+
+  Future<void> _openBannerShop(String shopId) async {
+    final shop = await _shopService.watchShop(shopId).first;
+    if (!mounted || shop == null || shop['active'] == false) return;
+    await _openShop(shop);
   }
 
   @override
@@ -57,54 +83,71 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // แสดง banner โปรโมชั่นแบบเลื่อนอัตโนมัติ
-          SizedBox(
-            height: 160,
-            child: PageView.builder(
-              controller: _bannerController,
-              itemCount: bannerImages.length,
-              itemBuilder:
-                  (context, i) => Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Image.asset(
-                        bannerImages[i],
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder:
-                            (context, error, stackTrace) => Container(
-                              color: Colors.grey[300],
-                              child: const Icon(
-                                Icons.image_not_supported,
-                                size: 48,
+          StreamBuilder<List<PromoBanner>>(
+            stream: _banners,
+            builder: (context, snapshot) {
+              final banners = snapshot.data ?? const <PromoBanner>[];
+              _bannerCount = banners.length;
+              if (banners.isEmpty) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  // แสดง banner โปรโมชั่นแบบเลื่อนอัตโนมัติ
+                  SizedBox(
+                    height: 160,
+                    child: PageView.builder(
+                      controller: _bannerController,
+                      itemCount: banners.length,
+                      itemBuilder: (context, i) {
+                        final banner = banners[i];
+                        return Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Semantics(
+                            label: banner.title,
+                            button: banner.shopId.isNotEmpty,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap:
+                                  banner.shopId.isEmpty
+                                      ? null
+                                      : () => _openBannerShop(banner.shopId),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: ShopImage(
+                                  source: banner.imageUrl,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                ),
                               ),
                             ),
+                          ),
+                        );
+                      },
+                      onPageChanged: (i) => setState(() => _bannerIndex = i),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // จุดบอกตำแหน่ง banner ปัจจุบัน
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      banners.length,
+                      (i) => Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color:
+                              i == _bannerIndex % banners.length
+                                  ? Colors.deepPurple
+                                  : Colors.grey,
+                        ),
                       ),
                     ),
                   ),
-              onPageChanged: (i) => setState(() => _bannerIndex = i),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // จุดบอกตำแหน่ง banner ปัจจุบัน
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              bannerImages.length,
-              (i) => Container(
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: i == _bannerIndex ? Colors.deepPurple : Colors.grey,
-                ),
-              ),
-            ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           // ข้อความหัวข้อ "เลือกร้านชาบู"
@@ -126,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // แสดงร้านชาบูในรูปแบบ Grid
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _shopService.watchShops(),
+              stream: _shops,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return const Center(child: Text('โหลดข้อมูลร้านไม่สำเร็จ'));
@@ -155,17 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       tile: _Tile(
                         shop['name'] as String? ?? '',
                         shop['image'] as String? ?? '',
-                        () async {
-                          final tabs = DefaultTabController.maybeOf(context);
-                          final booked = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ShopScreen(shopInfo: shop),
-                            ),
-                          );
-                          // แท็บที่ 2 คือ "คิวของฉัน"
-                          if (booked == true) tabs?.animateTo(1);
-                        },
+                        () => _openShop(shop),
                       ),
                     );
                   },

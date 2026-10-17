@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../services/admin_service.dart';
 import '../services/menu_service.dart';
+import '../utils/image_source.dart';
+import '../widgets/image_url_field.dart';
+import '../widgets/shop_image.dart';
 
 class ShopMenuAdmin extends StatefulWidget {
   const ShopMenuAdmin({super.key, required this.admin});
@@ -34,6 +37,25 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
     final categoryController = TextEditingController(
       text: item?.category ?? initialCategory,
     );
+    final descriptionController = TextEditingController(
+      text: item?.description ?? '',
+    );
+    final imageController = TextEditingController(text: item?.imageUrl ?? '');
+    final priceController = TextEditingController(
+      text: (item?.price ?? 0) == 0 ? '' : '${item!.price}',
+    );
+    void disposeControllers() {
+      for (final controller in [
+        nameController,
+        categoryController,
+        descriptionController,
+        imageController,
+        priceController,
+      ]) {
+        controller.dispose();
+      }
+    }
+
     var active = item?.active ?? true;
     String? validationError;
 
@@ -64,6 +86,32 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                             labelText: 'หมวดหมู่',
                             border: OutlineInputBorder(),
                           ),
+                        ),
+                        TextField(
+                          controller: descriptionController,
+                          maxLength: 200,
+                          maxLines: 2,
+                          decoration: const InputDecoration(
+                            labelText: 'คำอธิบาย (ไม่บังคับ)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: priceController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'ราคาเพิ่ม (บาท)',
+                            helperText: 'เว้นว่างถ้ารวมอยู่ในบุฟเฟ่ต์แล้ว',
+                            prefixText: '฿ ',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ImageUrlField(
+                          controller: imageController,
+                          label: 'ลิงก์รูปเมนู (ไม่บังคับ)',
+                          previewHeight: 100,
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
@@ -99,6 +147,25 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                           );
                           return;
                         }
+                        final priceText = priceController.text.trim();
+                        final price =
+                            priceText.isEmpty ? 0 : int.tryParse(priceText);
+                        if (price == null || price < 0 || price > 100000) {
+                          setDialogState(
+                            () =>
+                                validationError =
+                                    'ราคาต้องเป็นตัวเลข 0–100,000 บาท',
+                          );
+                          return;
+                        }
+                        if (!isAllowedImageSource(imageController.text)) {
+                          setDialogState(
+                            () =>
+                                validationError =
+                                    'ลิงก์รูปต้องขึ้นต้นด้วย https://',
+                          );
+                          return;
+                        }
                         Navigator.pop(context, true);
                       },
                       child: const Text('บันทึก'),
@@ -109,10 +176,10 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
     );
 
     if (confirmed != true) {
-      nameController.dispose();
-      categoryController.dispose();
+      disposeControllers();
       return;
     }
+    final price = int.tryParse(priceController.text.trim()) ?? 0;
 
     try {
       if (item == null) {
@@ -122,6 +189,9 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
           name: nameController.text,
           category: categoryController.text,
           active: active,
+          description: descriptionController.text,
+          imageUrl: imageController.text,
+          price: price,
         );
         _showMessage('เพิ่มเมนูแล้ว');
       } else {
@@ -131,14 +201,16 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
           name: nameController.text,
           category: categoryController.text,
           active: active,
+          description: descriptionController.text,
+          imageUrl: imageController.text,
+          price: price,
         );
         _showMessage('แก้ไขเมนูแล้ว');
       }
     } on FirebaseException {
       _showMessage('บันทึกเมนูไม่สำเร็จ กรุณาลองใหม่', error: true);
     } finally {
-      nameController.dispose();
-      categoryController.dispose();
+      disposeControllers();
     }
   }
 
@@ -228,16 +300,24 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                                     left: 24,
                                     right: 8,
                                   ),
-                                  leading: CircleAvatar(
-                                    child: Icon(
-                                      item.active
-                                          ? Icons.restaurant_menu
-                                          : Icons.visibility_off,
+                                  leading: Opacity(
+                                    opacity: item.active ? 1 : 0.4,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: ShopImage(
+                                        source: item.imageUrl,
+                                        width: 48,
+                                        height: 48,
+                                        placeholderIcon: Icons.restaurant_menu,
+                                      ),
                                     ),
                                   ),
                                   title: Text(item.name),
                                   subtitle: Text(
-                                    item.active ? 'แสดงอยู่' : 'ซ่อนอยู่',
+                                    [
+                                      item.active ? 'แสดงอยู่' : 'ซ่อนอยู่',
+                                      if (item.price > 0) '+฿${item.price}',
+                                    ].join(' • '),
                                   ),
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (action) {

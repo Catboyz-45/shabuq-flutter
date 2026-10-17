@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/image_source.dart';
+
 class ShopImage extends StatelessWidget {
   const ShopImage({
     super.key,
@@ -7,37 +9,54 @@ class ShopImage extends StatelessWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
+    this.placeholderIcon = Icons.storefront,
   });
 
   final String source;
   final double? width;
   final double? height;
   final BoxFit fit;
+  final IconData placeholderIcon;
 
   @override
   Widget build(BuildContext context) {
-    if (source.trim().isEmpty) {
+    final value = source.trim();
+    if (value.isEmpty || !isAllowedImageSource(value)) {
       return _placeholder();
     }
     return Image(
       image:
-          source.startsWith('https://')
-              ? NetworkImage(source)
-              : AssetImage(source),
+          value.startsWith('https://')
+              ? NetworkImage(value)
+              : AssetImage(value) as ImageProvider,
       width: width,
       height: height,
       fit: fit,
+      loadingBuilder:
+          (context, child, progress) =>
+              progress == null ? child : _placeholder(loading: true),
       errorBuilder: (_, _, _) => _placeholder(),
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder({bool loading = false}) {
+    final size = height != null && height!.isFinite ? height! : 96.0;
     return Container(
       width: width,
       height: height,
       color: Colors.grey.shade200,
       alignment: Alignment.center,
-      child: const Icon(Icons.storefront, size: 48, color: Colors.grey),
+      child:
+          loading
+              ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+              : Icon(
+                placeholderIcon,
+                size: (size / 2).clamp(16, 48),
+                color: Colors.grey,
+              ),
     );
   }
 }

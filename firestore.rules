@@ -38,6 +38,21 @@ service cloud.firestore {
         (isAdmin() && adminShopId() == shopId);
     }
 
+    // An https link pasted by an admin, a bundled app image, or empty.
+    // Mirrors isAllowedImageSource in lib/utils/image_source.dart.
+    function validImage(value) {
+      return value is string &&
+        value.size() <= 500 &&
+        (
+          value == '' ||
+          value.matches('^https://[^/]+[.][^/]+(/.*)?$') ||
+          (
+            value.matches('^assets/images/.+') &&
+            !value.matches('.*[.][.].*')
+          )
+        );
+    }
+
     function validShop(shopId, shopName) {
       return exists(/databases/$(database)/documents/shops/$(shopId)) &&
         get(/databases/$(database)/documents/shops/$(shopId)).data.active == true &&
@@ -184,19 +199,27 @@ service cloud.firestore {
         !exists(/databases/$(database)/documents/superAdmins/$(adminId));
     }
 
-    // Fields a shop's own admin may change: price, opening hours, pausing
-    // bookings and the call pace used for wait estimates.
+    // Fields a shop's own admin may change: price, opening hours, contact
+    // details and image, pausing bookings and the call pace for estimates.
     function validShopAdminSettings() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let data = request.resource.data;
       return changed.hasOnly([
           'pricePerPerson',
           'openingHours',
+          'image',
+          'location',
+          'phone',
           'acceptingQueues',
           'minutesPerQueue',
           'lastCalledAt',
           'updatedAt'
         ]) &&
+        validImage(data.get('image', '')) &&
+        data.get('location', '') is string &&
+        data.get('location', '').size() <= 300 &&
+        data.get('phone', '') is string &&
+        data.get('phone', '').size() <= 30 &&
         data.get('openingHours', '') is string &&
         data.get('openingHours', '').size() <= 40 &&
         data.get('acceptingQueues', true) is bool &&
@@ -228,12 +251,7 @@ service cloud.firestore {
         request.resource.data.location.size() <= 300 &&
         request.resource.data.phone is string &&
         request.resource.data.phone.size() <= 30 &&
-        request.resource.data.image is string &&
-        (
-          request.resource.data.image == '' ||
-          request.resource.data.image.matches('^https://.*')
-        ) &&
-        request.resource.data.image.size() <= 500 &&
+        validImage(request.resource.data.image) &&
         request.resource.data.zones is list &&
         request.resource.data.zones.size() > 0 &&
         request.resource.data.zones.size() <= 20 &&
@@ -268,13 +286,7 @@ service cloud.firestore {
           request.resource.data.location.size() <= 300 &&
           request.resource.data.phone is string &&
           request.resource.data.phone.size() <= 30 &&
-          request.resource.data.image is string &&
-          (
-            request.resource.data.image == '' ||
-            request.resource.data.image.matches('^https://.*') ||
-            request.resource.data.image.matches('^assets/images/.*')
-          ) &&
-          request.resource.data.image.size() <= 500 &&
+          validImage(request.resource.data.image) &&
           request.resource.data.zones is list &&
           request.resource.data.zones.size() > 0 &&
           request.resource.data.zones.size() <= 20 &&
@@ -288,6 +300,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Optional menu fields; items created before they existed have none.
+    function validMenuDetails(data) {
+      return data.get('description', '') is string &&
+        data.get('description', '').size() <= 200 &&
+        validImage(data.get('imageUrl', '')) &&
+        data.get('price', 0) is int &&
+        data.get('price', 0) >= 0 &&
+        data.get('price', 0) <= 100000;
+    }
+
     match /shops/{shopId}/menuItems/{menuItemId} {
       allow read: if signedIn();
       allow create: if isShopAdminFor(shopId) &&
@@ -297,9 +319,13 @@ service cloud.firestore {
           'name',
           'category',
           'active',
+          'description',
+          'imageUrl',
+          'price',
           'createdAt',
           'updatedAt'
         ]) &&
+        validMenuDetails(request.resource.data) &&
         request.resource.data.shopId == shopId &&
         validShop(shopId, request.resource.data.shopName) &&
         request.resource.data.name is string &&
@@ -317,8 +343,12 @@ service cloud.firestore {
           'name',
           'category',
           'active',
+          'description',
+          'imageUrl',
+          'price',
           'updatedAt'
         ]) &&
+        validMenuDetails(request.resource.data) &&
         request.resource.data.name is string &&
         request.resource.data.name.size() > 0 &&
         request.resource.data.name.size() <= 120 &&
@@ -527,6 +557,50 @@ service cloud.firestore {
           request.resource.data.shopId &&
         !existsAfter(queueAt(request.resource.data.queueId));
       allow update, delete: if false;
+    }
+
+    // Home screen banners, managed by Super Admins.
+    match /banners/{bannerId} {
+      allow read: if signedIn();
+      allow create, update: if isSuperAdmin() &&
+        request.resource.data.keys().hasOnly([
+          'imageUrl',
+          'title',
+          'shopId',
+          'order',
+          'active',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        validImage(request.resource.data.imageUrl) &&
+        request.resource.data.imageUrl != '' &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() <= 80 &&
+        request.resource.data.shopId is string &&
+        (
+          request.resource.data.shopId == '' ||
+          exists(/databases/$(database)/documents/shops/$(request.resource.data.shopId))
+        ) &&
+        request.resource.data.order is int &&
+        request.resource.data.active is bool &&
+        request.resource.data.updatedAt == request.time &&
+        (
+          resource != null ||
+          request.resource.data.createdAt == request.time
+        );
+      allow delete: if isSuperAdmin();
+    }
+
+    // Help, terms and privacy pages, edited by Super Admins.
+    match /appContent/{pageId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() &&
+        pageId in ['help', 'terms', 'privacy'] &&
+        request.resource.data.keys().hasOnly(['body', 'updatedAt']) &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() > 0 &&
+        request.resource.data.body.size() <= 10000 &&
+        request.resource.data.updatedAt == request.time;
     }
 
     match /{document=**} {

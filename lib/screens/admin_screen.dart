@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../services/admin_service.dart';
 import '../services/shop_service.dart';
+import '../utils/image_source.dart';
+import '../widgets/image_url_field.dart';
+import 'app_content_admin.dart';
+import 'banner_admin.dart';
 import 'promo_code_admin.dart';
 import 'shop_menu_admin.dart';
 import 'shop_queue_admin.dart';
@@ -360,12 +364,10 @@ class _AdminScreenState extends State<AdminScreen> {
                     keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(labelText: 'โทรศัพท์'),
                   ),
-                  TextField(
+                  const SizedBox(height: 12),
+                  ImageUrlField(
                     controller: imageController,
-                    keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(
-                      labelText: 'URL รูปภาพ (ไม่บังคับ)',
-                    ),
+                    label: 'ลิงก์รูปร้าน (ไม่บังคับ)',
                   ),
                   TextField(
                     controller: zonesController,
@@ -418,7 +420,7 @@ class _AdminScreenState extends State<AdminScreen> {
             .toList();
     if (!RegExp(r'^[a-z0-9][a-z0-9-]{2,49}$').hasMatch(id) ||
         name.isEmpty ||
-        (image.isNotEmpty && !image.startsWith('https://')) ||
+        !isAllowedImageSource(image) ||
         price == null ||
         price < 1 ||
         price > 100000 ||
@@ -500,12 +502,10 @@ class _AdminScreenState extends State<AdminScreen> {
                     keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(labelText: 'โทรศัพท์'),
                   ),
-                  TextField(
+                  const SizedBox(height: 12),
+                  ImageUrlField(
                     controller: imageController,
-                    keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(
-                      labelText: 'URL รูปภาพ (ไม่บังคับ)',
-                    ),
+                    label: 'ลิงก์รูปร้าน (ไม่บังคับ)',
                   ),
                   TextField(
                     controller: zonesController,
@@ -548,9 +548,7 @@ class _AdminScreenState extends State<AdminScreen> {
             .toSet()
             .toList();
     if (name.isEmpty ||
-        (image.isNotEmpty &&
-            !image.startsWith('https://') &&
-            !image.startsWith('assets/images/')) ||
+        !isAllowedImageSource(image) ||
         price == null ||
         price < 1 ||
         price > 100000 ||
@@ -686,6 +684,47 @@ class _AdminScreenState extends State<AdminScreen> {
                               FirebaseAuth.instance.currentUser?.email ?? '',
                             ),
                             trailing: const Chip(label: Text('ลบไม่ได้')),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Card(
+                          child: Column(
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.view_carousel),
+                                title: const Text('แบนเนอร์หน้าแรก'),
+                                subtitle: const Text(
+                                  'เพิ่ม แก้ไข เรียงลำดับ หรือซ่อนแบนเนอร์',
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap:
+                                    () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => const BannerAdminScreen(),
+                                      ),
+                                    ),
+                              ),
+                              const Divider(height: 1),
+                              ListTile(
+                                leading: const Icon(Icons.article),
+                                title: const Text('ข้อความในแอป'),
+                                subtitle: const Text(
+                                  'การช่วยเหลือ ข้อกำหนด และนโยบายความเป็นส่วนตัว',
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap:
+                                    () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) =>
+                                                const AppContentAdminScreen(),
+                                      ),
+                                    ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -932,6 +971,9 @@ class _ShopSettingsState extends State<_ShopSettings> {
   final ShopService _shopService = ShopService();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _hoursController = TextEditingController();
+  final TextEditingController _imageController = TextEditingController();
+  final TextEditingController _locationController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
   late final Stream<Map<String, dynamic>?> _shop = _shopService.watchShop(
     widget.admin.shopId,
   );
@@ -940,8 +982,15 @@ class _ShopSettingsState extends State<_ShopSettings> {
 
   @override
   void dispose() {
-    _priceController.dispose();
-    _hoursController.dispose();
+    for (final controller in [
+      _priceController,
+      _hoursController,
+      _imageController,
+      _locationController,
+      _phoneController,
+    ]) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -956,12 +1005,25 @@ class _ShopSettingsState extends State<_ShopSettings> {
       _showMessage('เวลาเปิด–ปิดยาวได้ไม่เกิน 40 ตัวอักษร');
       return;
     }
+    final imageError = imageSourceError(_imageController.text);
+    if (imageError != null) {
+      _showMessage(imageError);
+      return;
+    }
+    if (_locationController.text.trim().length > 300 ||
+        _phoneController.text.trim().length > 30) {
+      _showMessage('ที่อยู่หรือเบอร์โทรยาวเกินไป');
+      return;
+    }
     setState(() => _saving = true);
     try {
       await _shopService.updateShopSettings(
         shopId: widget.admin.shopId,
         pricePerPerson: price,
         openingHours: hours,
+        image: _imageController.text,
+        location: _locationController.text,
+        phone: _phoneController.text,
       );
       _showMessage('บันทึกข้อมูลร้านแล้ว');
     } on FirebaseException {
@@ -997,6 +1059,9 @@ class _ShopSettingsState extends State<_ShopSettings> {
           _loaded = true;
           _priceController.text = '${shop['pricePerPerson'] as int? ?? ''}';
           _hoursController.text = shop['openingHours'] as String? ?? '';
+          _imageController.text = shop['image'] as String? ?? '';
+          _locationController.text = shop['location'] as String? ?? '';
+          _phoneController.text = shop['phone'] as String? ?? '';
         }
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -1033,6 +1098,34 @@ class _ShopSettingsState extends State<_ShopSettings> {
               ),
             ),
             const SizedBox(height: 8),
+            TextField(
+              controller: _locationController,
+              enabled: !_saving,
+              maxLength: 300,
+              decoration: const InputDecoration(
+                labelText: 'ที่อยู่',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _phoneController,
+              enabled: !_saving,
+              maxLength: 30,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'เบอร์โทร',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ImageUrlField(
+              controller: _imageController,
+              enabled: !_saving,
+              label: 'ลิงก์รูปร้าน',
+              previewHeight: 160,
+            ),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
               icon:

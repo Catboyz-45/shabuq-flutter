@@ -411,17 +411,69 @@ class _ShopMenu extends StatelessWidget {
                   ),
                 ),
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final item in entry.value) Chip(label: Text(item.name)),
-                ],
-              ),
+              for (final item in entry.value) _MenuItemTile(item: item),
             ],
           ],
         );
       },
+    );
+  }
+}
+
+class _MenuItemTile extends StatelessWidget {
+  const _MenuItemTile({required this.item});
+
+  final MenuItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasImage = item.imageUrl.trim().isNotEmpty;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          if (hasImage)
+            ShopImage(
+              source: item.imageUrl,
+              width: 80,
+              height: 80,
+              placeholderIcon: Icons.restaurant_menu,
+            ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  if (item.description.isNotEmpty)
+                    Text(
+                      item.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Text(
+              item.price > 0 ? '+฿${item.price}' : 'รวมในบุฟเฟ่ต์',
+              style: TextStyle(
+                color: item.price > 0 ? Colors.deepPurple : Colors.grey,
+                fontWeight: item.price > 0 ? FontWeight.bold : null,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

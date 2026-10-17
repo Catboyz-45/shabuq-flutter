@@ -51,16 +51,16 @@ class AdminService {
         .map((snapshot) => snapshot.exists);
   }
 
-  Stream<bool> watchIsShopAdmin(User user) async* {
-    final reference = _firestore.collection('admins').doc(user.uid);
-    final serverSnapshot = await reference.get(
-      const GetOptions(source: Source.server),
-    );
-    yield serverSnapshot.data()?['active'] == true;
-
-    await for (final snapshot in reference.snapshots()) {
-      yield snapshot.data()?['active'] == true;
-    }
+  /// Whether [user] is an active shop admin, as confirmed by the server so a
+  /// cached document never grants or hides admin screens. Being a stream, it
+  /// stops reading as soon as the screen that listens to it goes away.
+  Stream<bool> watchIsShopAdmin(User user) {
+    return _firestore
+        .collection('admins')
+        .doc(user.uid)
+        .snapshots(includeMetadataChanges: true)
+        .where((snapshot) => !snapshot.metadata.isFromCache)
+        .map((snapshot) => snapshot.data()?['active'] == true);
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchUsers() {

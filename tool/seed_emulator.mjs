@@ -117,19 +117,41 @@ for (const { id, ...shop } of shops) {
     updatedAt: now,
   });
 }
+// Menu photos come from picsum.photos so the demo shows real image links.
 const menu = [
-  ['หมูสไลซ์', 'เนื้อสัตว์'],
-  ['เนื้อวากิว', 'เนื้อสัตว์'],
-  ['ผักรวม', 'ผัก'],
-  ['เห็ดเข็มทอง', 'ผัก'],
-  ['ไอศกรีม', 'ของหวาน'],
+  ['หมูสไลซ์', 'เนื้อสัตว์', 'หมูสันคอสไลซ์บาง', 0, 'https://picsum.photos/seed/shabu-pork/400/300'],
+  ['เนื้อวากิว', 'เนื้อสัตว์', 'วากิว A4 ต้องสั่งเพิ่ม', 159, 'https://picsum.photos/seed/shabu-wagyu/400/300'],
+  ['ผักรวม', 'ผัก', 'ผักกาดขาว ผักบุ้ง ข้าวโพด', 0, ''],
+  ['เห็ดเข็มทอง', 'ผัก', '', 0, ''],
+  ['ไอศกรีม', 'ของหวาน', 'วานิลลา ช็อกโกแลต ชาเขียว', 0, 'https://picsum.photos/seed/shabu-icecream/400/300'],
 ];
-for (const [index, [name, category]] of menu.entries()) {
+for (const [index, [name, category, description, price, imageUrl]] of menu.entries()) {
   await setDoc(`shops/teenoi/menuItems/item${index}`, {
     shopId: 'teenoi',
     shopName: 'Teenoi Shabu',
     name,
     category,
+    description,
+    price,
+    imageUrl,
+    active: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+// Home banners use the promotion images bundled with the app.
+const banners = [
+  ['assets/images/promotion/teenoi_promotion.jpg', 'โปรโมชั่น Teenoi', 'teenoi'],
+  ['assets/images/promotion/pho_promotion.jpeg', 'โปรโมชั่น Pho', 'pho'],
+  ['assets/images/promotion/wiyaki_promotion.jpeg', 'โปรโมชั่น Wiyaki', 'wiyaki'],
+];
+for (const [order, [imageUrl, title, shopId]] of banners.entries()) {
+  await setDoc(`banners/banner${order}`, {
+    imageUrl,
+    title,
+    shopId,
+    order,
     active: true,
     createdAt: now,
     updatedAt: now,
