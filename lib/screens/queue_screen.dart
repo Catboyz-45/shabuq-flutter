@@ -1,23 +1,36 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../models/queue_entry.dart';
+import '../models/shop.dart';
 import '../services/queue_service.dart';
 import '../services/shop_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/queue_position.dart';
 
 /// Shows the customer's active queue and history. Everything streams from
 /// Firestore, so the position updates as soon as the shop changes a status.
 class QueueScreen extends StatefulWidget {
-  const QueueScreen({super.key});
+  const QueueScreen({super.key, this.queueService, this.shopService, this.uid});
+
+  /// Injected in tests; the app uses the Firebase defaults.
+  final QueueService? queueService;
+  final ShopService? shopService;
+  final String? uid;
 
   @override
   State<QueueScreen> createState() => _QueueScreenState();
 }
 
 class _QueueScreenState extends State<QueueScreen> {
-  final _queueService = QueueService();
-  final _shopService = ShopService();
+  late final QueueService _queueService = widget.queueService ?? QueueService();
+  late final ShopService _shopService = widget.shopService ?? ShopService();
+  late final String? _uid =
+      widget.uid ?? FirebaseAuth.instance.currentUser?.uid;
+  late final Stream<QueueEntry?>? _myQueue =
+      _uid == null ? null : _queueService.watchMyQueue(_uid);
+  late final Stream<List<QueueEntry>>? _history =
+      _uid == null ? null : _queueService.watchMyHistory(_uid);
 
   Future<void> _cancelQueue(String uid) async {
     final confirm = await showDialog<bool>(
@@ -56,28 +69,25 @@ class _QueueScreenState extends State<QueueScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = _uid;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 149, 144, 248),
-        foregroundColor: Colors.white,
-        title: const Text('คิวของฉัน'),
-      ),
+      appBar: AppBar(title: const Text('คิวของฉัน')),
       body:
           uid == null
               ? const Center(child: Text('กรุณาเข้าสู่ระบบอีกครั้ง'))
-              : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: _queueService.watchMyQueue(uid),
+              : StreamBuilder<QueueEntry?>(
+                stream: _myQueue,
                 builder: (context, queueSnapshot) {
                   if (queueSnapshot.hasError) {
                     return const Center(
                       child: Text('ไม่สามารถโหลดข้อมูลคิวได้ กรุณาลองใหม่'),
                     );
                   }
-                  if (!queueSnapshot.hasData) {
+                  if (queueSnapshot.connectionState ==
+                      ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final queue = queueSnapshot.data!.data();
+                  final queue = queueSnapshot.data;
                   return ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
@@ -88,7 +98,7 @@ class _QueueScreenState extends State<QueueScreen> {
                         ),
                         const SizedBox(height: 8),
                         _ActiveQueueCard(
-                          key: ValueKey(queue['ticketId']),
+                          key: ValueKey(queue.ticketId),
                           queue: queue,
                           queueService: _queueService,
                           shopService: _shopService,
@@ -97,7 +107,7 @@ class _QueueScreenState extends State<QueueScreen> {
                         const SizedBox(height: 24),
                       ],
                       _QueueHistory(
-                        stream: _queueService.watchMyHistory(uid),
+                        stream: _history!,
                         hasActiveQueue: queue != null,
                       ),
                     ],
@@ -117,7 +127,7 @@ class _ActiveQueueCard extends StatefulWidget {
     required this.onCancel,
   });
 
-  final Map<String, dynamic> queue;
+  final QueueEntry queue;
   final QueueService queueService;
   final ShopService shopService;
   final VoidCallback onCancel;
@@ -127,31 +137,20 @@ class _ActiveQueueCard extends StatefulWidget {
 }
 
 class _ActiveQueueCardState extends State<_ActiveQueueCard> {
-  late final Stream<List<QueueTicket>> _tickets;
-  late final Stream<Map<String, dynamic>?> _shop;
-
-  @override
-  void initState() {
-    super.initState();
-    _tickets = widget.queueService.watchWaitingTickets(
-      shopId: widget.queue['shopId'] as String? ?? '',
-      zone: widget.queue['zone'] as String? ?? '',
-      queueDate: widget.queue['queueDate'] as String? ?? '',
-    );
-    _shop = widget.shopService.watchShop(
-      widget.queue['shopId'] as String? ?? '-',
-    );
-  }
+  late final Stream<List<QueueTicket>> _tickets = widget.queueService
+      .watchWaitingTickets(
+        shopId: widget.queue.shopId,
+        zone: widget.queue.zone,
+        queueDate: widget.queue.queueDate ?? '',
+      );
+  late final Stream<Shop?> _shop = widget.shopService.watchShop(
+    widget.queue.shopId,
+  );
 
   @override
   Widget build(BuildContext context) {
     final queue = widget.queue;
-    final zone = queue['zone'] as String? ?? '';
-    final ticketId = queue['ticketId'] as String? ?? '';
-    final status = queue['status'] as String? ?? 'waiting';
-    final createdAt = queue['createdAt'];
-    final ownCreatedAt =
-        createdAt is Timestamp ? createdAt.toDate() : DateTime.now();
+    final colors = Theme.of(context).colorScheme;
 
     return StreamBuilder<List<QueueTicket>>(
       stream: _tickets,
@@ -160,13 +159,14 @@ class _ActiveQueueCardState extends State<_ActiveQueueCard> {
             ticketSnapshot.hasData
                 ? queuesAhead(
                   waitingTickets: ticketSnapshot.data!,
-                  ownTicketId: ticketId,
-                  ownCreatedAt: ownCreatedAt,
+                  ownTicketId: queue.ticketId,
+                  ownCreatedAt: queue.createdAt ?? DateTime.now(),
                 )
                 : null;
         final progress =
-            ahead == null ? null : queueProgress(status: status, ahead: ahead);
-        final colors = Theme.of(context).colorScheme;
+            ahead == null
+                ? null
+                : queueProgress(status: queue.status, ahead: ahead);
 
         return Card(
           child: Padding(
@@ -181,11 +181,11 @@ class _ActiveQueueCardState extends State<_ActiveQueueCard> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            queue['shopName'] as String? ?? '',
+                            queue.shopName,
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                          Text('$zone • ${queue['partySize'] ?? 0} คน'),
+                          Text('${queue.zone} • ${queue.partySize} คน'),
                         ],
                       ),
                     ),
@@ -193,12 +193,12 @@ class _ActiveQueueCardState extends State<_ActiveQueueCard> {
                       children: [
                         const Text('เลขคิว'),
                         Text(
-                          queue['queueLabel'] as String? ?? '-',
+                          queue.queueLabel,
                           style: Theme.of(
                             context,
                           ).textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Colors.deepPurple,
+                            color: colors.primary,
                           ),
                         ),
                       ],
@@ -206,25 +206,20 @@ class _ActiveQueueCardState extends State<_ActiveQueueCard> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (isStaleQueue(
-                  queue['queueDate'] as String?,
-                  today: queueDateKey(DateTime.now()),
-                ))
+                if (queue.isStale(queueDateKey(DateTime.now())))
                   const _StaleBanner()
                 else if (ticketSnapshot.hasError)
                   const Text('โหลดลำดับคิวไม่สำเร็จ')
                 else if (progress == null)
                   const LinearProgressIndicator()
                 else
-                  StreamBuilder<Map<String, dynamic>?>(
+                  StreamBuilder<Shop?>(
                     stream: _shop,
                     builder:
                         (context, shopSnapshot) => _ProgressBanner(
                           progress: progress,
                           ahead: ahead!,
-                          minutesPerQueue:
-                              (shopSnapshot.data?['minutesPerQueue'] as num?)
-                                  ?.toDouble(),
+                          minutesPerQueue: shopSnapshot.data?.minutesPerQueue,
                         ),
                   ),
                 if (progress != QueueProgress.serving) ...[
@@ -286,6 +281,7 @@ class _ProgressBanner extends StatelessWidget {
       ahead: ahead,
       minutesPerQueue: minutesPerQueue,
     );
+    final status = StatusColors.of(context);
     final (
       IconData icon,
       Color color,
@@ -294,25 +290,25 @@ class _ProgressBanner extends StatelessWidget {
     ) = switch (progress) {
       QueueProgress.called => (
         Icons.campaign,
-        Colors.green,
+        status.called,
         'ถึงคิวแล้ว!',
         'เชิญที่หน้าร้าน แจ้งเลขคิวกับพนักงานได้เลย',
       ),
       QueueProgress.serving => (
         Icons.restaurant,
-        Colors.teal,
+        status.serving,
         'กำลังใช้บริการ',
         'ขอให้อร่อยกับมื้อนี้',
       ),
       QueueProgress.next => (
         Icons.hourglass_top,
-        Colors.orange,
+        status.next,
         'คิวถัดไป',
         'ประมาณ $wait นาที กรุณาเตรียมตัวใกล้ร้าน',
       ),
       QueueProgress.waiting => (
         Icons.schedule,
-        Colors.deepPurple,
+        Theme.of(context).colorScheme.primary,
         'รออีก $ahead คิว',
         'ประมาณ $wait นาที • อัปเดตอัตโนมัติ',
       ),
@@ -353,25 +349,19 @@ class _ProgressBanner extends StatelessWidget {
 class _QueueHistory extends StatelessWidget {
   const _QueueHistory({required this.stream, required this.hasActiveQueue});
 
-  final Stream<QuerySnapshot<Map<String, dynamic>>> stream;
+  final Stream<List<QueueEntry>> stream;
   final bool hasActiveQueue;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    return StreamBuilder<List<QueueEntry>>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const Text('โหลดประวัติการใช้บริการไม่สำเร็จ');
         }
         if (!snapshot.hasData) return const SizedBox.shrink();
-        final items =
-            snapshot.data!.docs.map((document) => document.data()).toList()
-              ..sort(
-                (left, right) => _dateOf(
-                  right['completedAt'],
-                ).compareTo(_dateOf(left['completedAt'])),
-              );
+        final items = snapshot.data!;
         if (items.isEmpty) {
           return hasActiveQueue
               ? const SizedBox.shrink()
@@ -388,21 +378,21 @@ class _QueueHistory extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            ...items.map(
-              (item) => Card(
+            for (final item in items)
+              Card(
                 margin: const EdgeInsets.symmetric(vertical: 6),
                 child: ListTile(
                   leading: const CircleAvatar(child: Icon(Icons.history)),
                   title: Text(
-                    '${item['queueLabel'] ?? ''} ${item['shopName'] ?? ''}',
+                    '${item.queueLabel} ${item.shopName}',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
-                    '${item['zone'] ?? ''} • ${item['partySize'] ?? 0} คน\n'
-                    '${_formatDate(_dateOf(item['completedAt']))}',
+                    '${item.zone} • ${item.partySize} คน\n'
+                    '${_formatDate(item.completedAt)}',
                   ),
                   trailing: Chip(
-                    label: Text(switch (item['status']) {
+                    label: Text(switch (item.status) {
                       'no_show' => 'ไม่มาตามคิว',
                       'cancelled' => 'ร้านยกเลิก',
                       _ => 'เสร็จสิ้น',
@@ -410,21 +400,14 @@ class _QueueHistory extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
           ],
         );
       },
     );
   }
 
-  static DateTime _dateOf(Object? value) {
-    return value is Timestamp
-        ? value.toDate()
-        : DateTime.fromMillisecondsSinceEpoch(0);
-  }
-
-  static String _formatDate(DateTime date) {
-    if (date.millisecondsSinceEpoch == 0) return '-';
+  static String _formatDate(DateTime? date) {
+    if (date == null) return '-';
     String twoDigits(int value) => value.toString().padLeft(2, '0');
     return '${twoDigits(date.day)}/${twoDigits(date.month)}/${date.year} '
         '${twoDigits(date.hour)}:${twoDigits(date.minute)}';

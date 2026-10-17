@@ -269,10 +269,13 @@ service cloud.firestore {
           'image',
           'zones',
           'pricePerPerson',
+          'openingHours',
           'active',
           'createdAt',
           'updatedAt'
         ]) &&
+        request.resource.data.get('openingHours', '') is string &&
+        request.resource.data.get('openingHours', '').size() <= 40 &&
         request.resource.data.name is string &&
         request.resource.data.name.size() > 0 &&
         request.resource.data.name.size() <= 120 &&
@@ -305,9 +308,12 @@ service cloud.firestore {
             'image',
             'zones',
             'pricePerPerson',
+            'openingHours',
             'active',
             'updatedAt'
           ]) &&
+          request.resource.data.get('openingHours', '') is string &&
+          request.resource.data.get('openingHours', '').size() <= 40 &&
           request.resource.data.name is string &&
           request.resource.data.name.size() > 0 &&
           request.resource.data.name.size() <= 120 &&

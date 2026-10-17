@@ -10,6 +10,8 @@ import 'firebase_options.dart'; // การตั้งค่า Firebase ส�
 import 'screens/admin_screen.dart';
 import 'screens/auth_screen.dart'; // หน้าล็อกอิน/สมัครสมาชิก
 import 'services/admin_service.dart';
+import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 
 // ฟังก์ชัน main เป็นจุดเริ่มต้นของแอป
 Future<void> main() async {
@@ -24,31 +26,33 @@ Future<void> main() async {
     await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
     FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
   }
-  runApp(const MyApp()); // เรียกใช้งานแอปหลัก
+  final themeController = await ThemeController.load();
+  runApp(MyApp(themeController: themeController)); // เรียกใช้งานแอปหลัก
 }
 
 // คลาสหลักของแอป
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.themeController});
+
+  final ThemeController themeController;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false, // ซ่อนแถบ debug ด้านขวาบน
-      title: 'ShabuQ', // ชื่อแอป
-      theme: ThemeData(
-        useMaterial3: true, // ใช้ Material Design 3
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4F46E5), // สีหลักของธีม
-          brightness: Brightness.light, // โหมดสว่าง
-        ),
-        brightness: Brightness.light, // กำหนดให้ธีมเป็นโหมดสว่าง
+    return ThemeScope(
+      controller: themeController,
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: themeController,
+        builder:
+            (context, themeMode, _) => MaterialApp(
+              debugShowCheckedModeBanner: false, // ซ่อนแถบ debug ด้านขวาบน
+              title: 'ShabuQ', // ชื่อแอป
+              // สีทั้งหมดของแอปมาจาก AppTheme รองรับทั้งโหมดสว่างและโหมดมืด
+              theme: AppTheme.light(),
+              darkTheme: AppTheme.dark(),
+              themeMode: themeMode,
+              home: const _AuthGate(),
+            ),
       ),
-      home: const _AuthGate(),
-      routes: {
-        // สามารถเพิ่มเส้นทางไปยังหน้าต่าง ๆ ได้ที่นี่
-        // '/admin_manage': (context) => const AdminManageScreen(),
-      },
     );
   }
 }
@@ -62,10 +66,14 @@ class _AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<_AuthGate> {
   StreamSubscription<User?>? _subscription;
-  Timer? _transitionTimer;
   User? _user;
   bool _initialized = false;
-  bool _readyForAuthenticatedScreen = false;
+
+  /// True while the login form is still finishing its submit animation for
+  /// a sign-in that just happened. flutter_login reports the end of that
+  /// animation through AuthScreen.onFinished; swapping screens earlier would
+  /// dispose the form mid-animation.
+  bool _waitingForLoginAnimation = false;
 
   @override
   void initState() {
@@ -76,38 +84,22 @@ class _AuthGateState extends State<_AuthGate> {
   }
 
   void _handleAuthChange(User? user) {
-    _transitionTimer?.cancel();
     if (!mounted) return;
-
-    if (user == null) {
-      setState(() {
-        _user = null;
-        _initialized = true;
-        _readyForAuthenticatedScreen = false;
-      });
-      return;
-    }
-
-    final wasSignedOut = _user == null && _initialized;
     setState(() {
+      // A user restored at start-up goes straight in; a fresh sign-in from
+      // the login form waits for the form to finish animating.
+      _waitingForLoginAnimation = user != null && _initialized && _user == null;
       _user = user;
       _initialized = true;
-      _readyForAuthenticatedScreen = !wasSignedOut;
     });
+  }
 
-    if (wasSignedOut) {
-      // flutter_login finishes its submit animation after the callback returns.
-      // Keeping AuthScreen mounted briefly prevents an unmounted-State race.
-      _transitionTimer = Timer(const Duration(milliseconds: 700), () {
-        if (!mounted || _user == null) return;
-        setState(() => _readyForAuthenticatedScreen = true);
-      });
-    }
+  void _onLoginAnimationFinished() {
+    if (mounted) setState(() => _waitingForLoginAnimation = false);
   }
 
   @override
   void dispose() {
-    _transitionTimer?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
@@ -118,8 +110,8 @@ class _AuthGateState extends State<_AuthGate> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final user = _user;
-    if (user == null || !_readyForAuthenticatedScreen) {
-      return const AuthScreen();
+    if (user == null || _waitingForLoginAnimation) {
+      return AuthScreen(onFinished: _onLoginAnimationFinished);
     }
     return _RoleRouter(user: user);
   }

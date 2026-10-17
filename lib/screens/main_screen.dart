@@ -20,7 +20,6 @@ class _MainTabsState extends State<MainTabs> {
     return DefaultTabController(
       length: 4, // จำนวนแท็บทั้งหมดที่จะแสดง
       child: Scaffold(
-        backgroundColor: Colors.white, // สีพื้นหลังของหน้าจอ
         // แจ้งเตือนในแอปเมื่อใกล้ถึงคิว ไม่ว่าจะอยู่แท็บไหน
         body: const QueueAlerts(
           child: TabBarView(
@@ -33,10 +32,8 @@ class _MainTabsState extends State<MainTabs> {
             ],
           ),
         ),
+        // แถบเมนูด้านล่าง สีมาจาก AppTheme
         bottomNavigationBar: const TabBar(
-          // แถบเมนูด้านล่าง
-          labelColor: Colors.deepPurple, // สีของแท็บที่เลือก
-          unselectedLabelColor: Colors.grey, // สีของแท็บที่ไม่ได้เลือก
           tabs: [
             Tab(icon: Icon(Icons.home), text: 'หน้าหลัก'),
             Tab(icon: Icon(Icons.confirmation_number), text: 'คิวของฉัน'),

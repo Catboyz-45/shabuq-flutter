@@ -5,10 +5,15 @@ import 'package:firebase_auth/firebase_auth.dart'; // สำหรับจั�
 import 'package:cloud_firestore/cloud_firestore.dart'; // สำหรับบันทึกข้อมูลผู้ใช้เพิ่มเติม
 
 import '../utils/auth_messages.dart';
+import '../theme/app_theme.dart';
 
 // หน้าจอสำหรับล็อกอินและสมัครสมาชิก
 class AuthScreen extends StatelessWidget {
-  const AuthScreen({super.key});
+  const AuthScreen({super.key, this.onFinished});
+
+  /// Called once the login/sign-up animation has finished after a successful
+  /// submit; the app switches to the signed-in screens at that point.
+  final VoidCallback? onFinished;
 
   // ฟังก์ชันล็อกอิน
   Future<String?> _login(LoginData data) async {
@@ -69,13 +74,12 @@ class AuthScreen extends StatelessWidget {
       onLogin: _login, // ฟังก์ชันล็อกอิน
       onSignup: _signup, // ฟังก์ชันสมัครสมาชิก
       onRecoverPassword: _recoverPassword, // ส่งลิงก์ตั้งรหัสผ่านใหม่
-      onSubmitAnimationCompleted: () {
-        Navigator.of(context).pop(); // กลับไปหน้าหลักหลังล็อกอิน/สมัครเสร็จ
-      },
+      // แจ้ง AuthGate ให้เปลี่ยนไปหน้าหลักเมื่อแอนิเมชันจบแล้ว
+      onSubmitAnimationCompleted: () => onFinished?.call(),
       theme: LoginTheme(
-        primaryColor: const Color.fromARGB(255, 149, 144, 248), // สีหลักของธีม
+        primaryColor: brandColor, // สีหลักของธีม
         buttonTheme: LoginButtonTheme(
-          backgroundColor: const Color.fromARGB(255, 149, 144, 248),
+          backgroundColor: brandColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),

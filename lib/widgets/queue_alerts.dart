@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/queue_entry.dart';
 import '../services/queue_service.dart';
 import '../utils/queue_position.dart';
 
@@ -28,10 +28,10 @@ class QueueAlerts extends StatefulWidget {
 
 class _QueueAlertsState extends State<QueueAlerts> {
   final _queueService = QueueService();
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _queueSub;
+  StreamSubscription<QueueEntry?>? _queueSub;
   StreamSubscription<List<QueueTicket>>? _ticketSub;
   String? _watchedTicketId;
-  Map<String, dynamic>? _queue;
+  QueueEntry? _queue;
   final _alerted = <String>{};
   ({String message, bool urgent})? _banner;
   Timer? _hideTimer;
@@ -45,10 +45,9 @@ class _QueueAlertsState extends State<QueueAlerts> {
     }
   }
 
-  void _onQueue(DocumentSnapshot<Map<String, dynamic>> snapshot) {
-    final queue = snapshot.data();
+  void _onQueue(QueueEntry? queue) {
     _queue = queue;
-    final ticketId = queue?['ticketId'] as String?;
+    final ticketId = queue?.ticketId;
     if (ticketId != _watchedTicketId) {
       _ticketSub?.cancel();
       _ticketSub = null;
@@ -56,17 +55,17 @@ class _QueueAlertsState extends State<QueueAlerts> {
       if (queue != null && ticketId != null) {
         _ticketSub = _queueService
             .watchWaitingTickets(
-              shopId: queue['shopId'] as String? ?? '',
-              zone: queue['zone'] as String? ?? '',
-              queueDate: queue['queueDate'] as String? ?? '',
+              shopId: queue.shopId,
+              zone: queue.zone,
+              queueDate: queue.queueDate ?? '',
             )
             .listen(_onTickets);
       }
     }
-    if (queue?['status'] == 'called') {
+    if (queue != null && queue.status == 'called') {
       _alertOnce(
         '$ticketId:called',
-        'ถึงคิว ${queue?['queueLabel'] ?? ''} แล้ว! เชิญที่หน้าร้าน',
+        'ถึงคิว ${queue.queueLabel} แล้ว! เชิญที่หน้าร้าน',
         urgent: true,
       );
     }
@@ -77,19 +76,14 @@ class _QueueAlertsState extends State<QueueAlerts> {
     final ticketId = _watchedTicketId;
     if (queue == null ||
         ticketId == null ||
-        queue['status'] != 'waiting' ||
-        isStaleQueue(
-          queue['queueDate'] as String?,
-          today: queueDateKey(DateTime.now()),
-        )) {
+        queue.status != 'waiting' ||
+        queue.isStale(queueDateKey(DateTime.now()))) {
       return;
     }
-    final createdAt = queue['createdAt'];
     final ahead = queuesAhead(
       waitingTickets: tickets,
       ownTicketId: ticketId,
-      ownCreatedAt:
-          createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
+      ownCreatedAt: queue.createdAt ?? DateTime.now(),
     );
     if (ahead <= QueueAlerts.nearThreshold) {
       _alertOnce(
@@ -178,7 +172,10 @@ class _AlertBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = urgent ? Colors.green.shade700 : Colors.deepPurple;
+    final scheme = Theme.of(context).colorScheme;
+    // ใช้สีเข้มกับตัวอักษรขาวทั้งสองโหมดเพื่อให้อ่านง่าย
+    final color = urgent ? const Color(0xFF15803D) : scheme.primary;
+    final onColor = urgent ? Colors.white : scheme.onPrimary;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Material(
@@ -197,15 +194,15 @@ class _AlertBanner extends StatelessWidget {
               children: [
                 Icon(
                   urgent ? Icons.campaign : Icons.notifications_active,
-                  color: Colors.white,
+                  color: onColor,
                   size: 28,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     message,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: onColor,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
@@ -214,7 +211,7 @@ class _AlertBanner extends StatelessWidget {
                 IconButton(
                   tooltip: 'ปิด',
                   onPressed: onClose,
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  icon: Icon(Icons.close, color: onColor),
                 ),
               ],
             ),

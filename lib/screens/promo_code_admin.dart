@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/promo_code_service.dart';
+import '../theme/app_theme.dart';
 
 class PromoCodeAdmin extends StatelessWidget {
   PromoCodeAdmin({super.key});
@@ -61,7 +62,7 @@ class PromoCodeAdmin extends StatelessWidget {
                 child: const Text('ยกเลิก'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                style: destructiveButtonStyle(context),
                 onPressed: () => Navigator.pop(context, true),
                 child: const Text('ลบ'),
               ),
@@ -230,7 +231,10 @@ class _PromoCodeDialogState extends State<_PromoCodeDialog> {
                 onChanged: (value) => setState(() => _active = value),
               ),
             if (_error != null)
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
           ],
         ),
       ),

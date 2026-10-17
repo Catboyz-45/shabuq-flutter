@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/coupon_service.dart';
+import '../theme/app_theme.dart';
 
 // หน้าจอสำหรับจัดการโปรโมชั่นและคูปองของผู้ใช้
 class PromotionsScreen extends StatefulWidget {
@@ -153,11 +154,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 149, 144, 248),
-        foregroundColor: Colors.white,
-        title: const Text('โปรโมชั่น'),
-      ),
+      appBar: AppBar(title: const Text('โปรโมชั่น')),
       body:
           _loading
               ? const Center(
@@ -193,7 +190,9 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         _error!,
-                        style: const TextStyle(color: Colors.red),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                       ),
                     ),
                   const SizedBox(height: 24),
@@ -213,13 +212,13 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.deepPurple,
+                          color: Theme.of(context).colorScheme.primary,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(
                           '${_userCoupons.length} คูปอง',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -227,11 +226,13 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                     ],
                   ),
                   if (_userCoupons.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         'ยังไม่มีส่วนลด',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   // แสดงรายการคูปอง
@@ -245,16 +246,16 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                           children: [
                             Text(
                               '-฿${c['value']}',
-                              style: const TextStyle(
-                                color: Colors.green,
+                              style: TextStyle(
+                                color: StatusColors.of(context).success,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(width: 8),
                             IconButton(
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.check_circle,
-                                color: Colors.deepPurple,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                               tooltip: 'ใช้คูปองที่หน้าร้าน',
                               onPressed: () => _useCoupon(c['id']),

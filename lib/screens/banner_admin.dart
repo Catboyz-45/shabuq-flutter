@@ -1,11 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../models/shop.dart';
 import '../services/banner_service.dart';
 import '../services/shop_service.dart';
 import '../utils/image_source.dart';
 import '../widgets/image_url_field.dart';
 import '../widgets/shop_image.dart';
+import '../theme/app_theme.dart';
 
 /// Super Admin page for the home screen banners: add, edit, reorder, hide
 /// and delete without releasing a new version of the app.
@@ -21,8 +23,9 @@ class _BannerAdminScreenState extends State<BannerAdminScreen> {
   late final Stream<List<PromoBanner>> _banners = _bannerService.watchBanners(
     activeOnly: false,
   );
-  late final Stream<List<Map<String, dynamic>>> _shops = ShopService()
-      .watchShops(includeInactive: true);
+  late final Stream<List<Shop>> _shops = ShopService().watchShops(
+    includeInactive: true,
+  );
 
   void _showMessage(String message, {bool error = false}) {
     if (!mounted) return;
@@ -35,7 +38,7 @@ class _BannerAdminScreenState extends State<BannerAdminScreen> {
   }
 
   Future<void> _edit(
-    List<Map<String, dynamic>> shops, {
+    List<Shop> shops, {
     PromoBanner? banner,
     required int nextOrder,
   }) async {
@@ -97,7 +100,7 @@ class _BannerAdminScreenState extends State<BannerAdminScreen> {
                 child: const Text('ยกเลิก'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                style: destructiveButtonStyle(dialogContext),
                 onPressed: () => Navigator.pop(dialogContext, true),
                 child: const Text('ลบ'),
               ),
@@ -115,13 +118,11 @@ class _BannerAdminScreenState extends State<BannerAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
+    return StreamBuilder<List<Shop>>(
       stream: _shops,
       builder: (context, shopSnapshot) {
         final shops = shopSnapshot.data ?? const [];
-        final shopNames = {
-          for (final shop in shops) shop['id'] as String: shop['name'],
-        };
+        final shopNames = {for (final shop in shops) shop.id: shop.name};
         return StreamBuilder<List<PromoBanner>>(
           stream: _banners,
           builder: (context, snapshot) {
@@ -212,9 +213,14 @@ class _BannerAdminScreenState extends State<BannerAdminScreen> {
                                     ),
                                     TextButton(
                                       onPressed: () => _delete(banner),
-                                      child: const Text(
+                                      child: Text(
                                         'ลบ',
-                                        style: TextStyle(color: Colors.red),
+                                        style: TextStyle(
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -245,7 +251,7 @@ class _BannerDialog extends StatefulWidget {
   const _BannerDialog({required this.banner, required this.shops});
 
   final PromoBanner? banner;
-  final List<Map<String, dynamic>> shops;
+  final List<Shop> shops;
 
   @override
   State<_BannerDialog> createState() => _BannerDialogState();
@@ -283,7 +289,7 @@ class _BannerDialogState extends State<_BannerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final shopIds = widget.shops.map((shop) => shop['id'] as String).toSet();
+    final shopIds = widget.shops.map((shop) => shop.id).toSet();
     return AlertDialog(
       title: Text(widget.banner == null ? 'เพิ่มแบนเนอร์' : 'แก้ไขแบนเนอร์'),
       content: SizedBox(
@@ -318,10 +324,7 @@ class _BannerDialogState extends State<_BannerDialog> {
                     child: Text('ไม่ลิงก์ไปร้าน'),
                   ),
                   for (final shop in widget.shops)
-                    DropdownMenuItem(
-                      value: shop['id'] as String,
-                      child: Text(shop['name'] as String? ?? ''),
-                    ),
+                    DropdownMenuItem(value: shop.id, child: Text(shop.name)),
                 ],
                 onChanged: (value) => setState(() => _shopId = value ?? ''),
               ),

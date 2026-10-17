@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  flutter:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
+
+  rules:
+    name: Firestore security rules
+    runs-on: ubuntu-latest
+    env:
+      # A demo- project id keeps the emulators fully offline.
+      FIREBASE_PROJECT: demo-shabuq
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Seed the emulators and check the rules
+        run: >
+          npx --yes firebase-tools@15.11.0 emulators:exec
+          --project demo-shabuq --only auth,firestore
+          "node tool/seed_emulator.mjs && node tool/test_rules.mjs"

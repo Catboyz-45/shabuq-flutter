@@ -1,475 +1,117 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import '../services/account_service.dart';
 import '../services/app_content_service.dart';
+import '../theme/theme_controller.dart';
+import '../widgets/profile_card.dart';
+import 'delete_account_dialog.dart';
 
+/// Customer profile: avatar and contact details, theme, help pages, account
+/// deletion and sign-out.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final theme = Theme.of(context);
-    final textColor = theme.textTheme.bodyMedium?.color;
-    final cardColor = theme.cardColor;
-
-    // Firestore reference
-    final userDoc =
-        user != null
-            ? FirebaseFirestore.instance.collection('users').doc(user.uid)
-            : null;
+    final scheme = Theme.of(context).colorScheme;
+    final themeController = ThemeScope.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 149, 144, 248),
-        foregroundColor: Colors.white,
-        title: const Text('โปรไฟล์'),
-      ),
-      body: Padding(
+      appBar: AppBar(title: const Text('โปรไฟล์')),
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            // Card สำหรับข้อมูลส่วนตัว
-            FutureBuilder<DocumentSnapshot>(
-              future: userDoc?.get(),
-              builder: (context, snapshot) {
-                final data =
-                    snapshot.data?.data() as Map<String, dynamic>? ?? {};
-                String phone = data['phone'] ?? '';
-                String displayName =
-                    data['displayName'] ?? user?.displayName ?? '';
-                String avatarIcon = data['avatarIcon'] ?? 'person';
-                int avatarColor = data['avatarColor'] ?? Colors.grey.toARGB32();
-
-                return StatefulBuilder(
-                  builder:
-                      (context, setState) => Column(
-                        children: [
-                          // รูปโปรไฟล์ + เลือกไอคอนและสี
-                          Center(
-                            child: GestureDetector(
-                              onTap: () async {
-                                // เลือกไอคอนและสี
-                                await showDialog(
-                                  context: context,
-                                  builder: (ctx) {
-                                    String tempIcon = avatarIcon;
-                                    int tempColor = avatarColor;
-                                    final icons = [
-                                      'person',
-                                      'face',
-                                      'star',
-                                      'pets',
-                                      'emoji_emotions',
-                                    ];
-                                    final colors = [
-                                      Colors.grey,
-                                      Colors.blue,
-                                      Colors.red,
-                                      Colors.green,
-                                      Colors.orange,
-                                      Colors.purple,
-                                    ];
-                                    return StatefulBuilder(
-                                      builder:
-                                          (
-                                            context,
-                                            setDialogState,
-                                          ) => AlertDialog(
-                                            title: const Text(
-                                              'เลือกไอคอนและสี',
-                                            ),
-                                            content: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Wrap(
-                                                  spacing: 8,
-                                                  children:
-                                                      icons.map((iconName) {
-                                                        final selected =
-                                                            tempIcon ==
-                                                            iconName;
-                                                        return GestureDetector(
-                                                          onTap: () {
-                                                            tempIcon = iconName;
-                                                            setDialogState(
-                                                              () {},
-                                                            );
-                                                          },
-                                                          child: Container(
-                                                            decoration: BoxDecoration(
-                                                              shape:
-                                                                  BoxShape
-                                                                      .circle,
-                                                              border: Border.all(
-                                                                color:
-                                                                    selected
-                                                                        ? Colors
-                                                                            .blue
-                                                                        : Colors
-                                                                            .transparent,
-                                                                width: 3,
-                                                              ),
-                                                              color:
-                                                                  selected
-                                                                      ? Colors
-                                                                          .blue
-                                                                          .withValues(
-                                                                            alpha:
-                                                                                0.15,
-                                                                          )
-                                                                      : Colors
-                                                                          .transparent,
-                                                            ),
-                                                            padding:
-                                                                const EdgeInsets.all(
-                                                                  8,
-                                                                ),
-                                                            child: Icon(
-                                                              _iconFromName(
-                                                                iconName,
-                                                              ),
-                                                              size: 32,
-                                                              color:
-                                                                  selected
-                                                                      ? Colors
-                                                                          .blue
-                                                                      : Colors
-                                                                          .black54,
-                                                            ),
-                                                          ),
-                                                        );
-                                                      }).toList(),
-                                                ),
-                                                const SizedBox(height: 16),
-                                                Wrap(
-                                                  spacing: 8,
-                                                  children:
-                                                      colors.map((c) {
-                                                        final selected =
-                                                            tempColor ==
-                                                            c.toARGB32();
-                                                        return GestureDetector(
-                                                          onTap: () {
-                                                            tempColor =
-                                                                c.toARGB32();
-                                                            setDialogState(
-                                                              () {},
-                                                            );
-                                                          },
-                                                          child: Container(
-                                                            width: 32,
-                                                            height: 32,
-                                                            decoration: BoxDecoration(
-                                                              shape:
-                                                                  BoxShape
-                                                                      .circle,
-                                                              color: c,
-                                                              border: Border.all(
-                                                                color:
-                                                                    selected
-                                                                        ? Colors
-                                                                            .blue
-                                                                        : Colors
-                                                                            .transparent,
-                                                                width: 3,
-                                                              ),
-                                                            ),
-                                                            child:
-                                                                selected
-                                                                    ? const Icon(
-                                                                      Icons
-                                                                          .check,
-                                                                      color:
-                                                                          Colors
-                                                                              .white,
-                                                                      size: 20,
-                                                                    )
-                                                                    : null,
-                                                          ),
-                                                        );
-                                                      }).toList(),
-                                                ),
-                                              ],
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                child: const Text('ยกเลิก'),
-                                                onPressed:
-                                                    () => Navigator.pop(ctx),
-                                              ),
-                                              TextButton(
-                                                child: const Text('บันทึก'),
-                                                onPressed: () async {
-                                                  await userDoc?.set({
-                                                    'avatarIcon': tempIcon,
-                                                    'avatarColor': tempColor,
-                                                  }, SetOptions(merge: true));
-                                                  if (!ctx.mounted) return;
-                                                  setState(() {
-                                                    avatarIcon = tempIcon;
-                                                    avatarColor = tempColor;
-                                                  });
-                                                  Navigator.pop(ctx);
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                    );
-                                  },
-                                );
-                              },
-                              child: Column(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 48,
-                                    backgroundColor: Color(avatarColor),
-                                    child: Icon(
-                                      _iconFromName(avatarIcon),
-                                      size: 48,
-                                      color: textColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  SizedBox(
-                                    width: 220,
-                                    child: TextField(
-                                      controller: TextEditingController(
-                                        text: displayName,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: textColor,
-                                      ),
-                                      decoration: InputDecoration(
-                                        border: InputBorder.none,
-                                        hintText: 'ชื่อผู้ใช้',
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                      onChanged: (val) async {
-                                        await userDoc?.set({
-                                          'displayName': val,
-                                        }, SetOptions(merge: true));
-                                        displayName = val;
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // ข้อมูลส่วนตัว
-                          Card(
-                            color: cardColor,
-                            elevation: 3,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Container(
-                              width: 380,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 28,
-                                vertical: 28,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'ข้อมูลส่วนตัว',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: textColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 18),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'อีเมล',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            color: textColor,
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Align(
-                                          alignment: Alignment.centerRight,
-                                          child: Text(
-                                            user?.email ?? '-',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                              color: textColor,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Divider(
-                                          height: 1,
-                                          color: theme.dividerColor,
-                                          thickness: 1,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  // เบอร์โทรศัพท์
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'เบอร์โทรศัพท์',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            color: textColor,
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Align(
-                                          alignment: Alignment.centerRight,
-                                          child: SizedBox(
-                                            width: 140,
-                                            child: TextField(
-                                              controller: TextEditingController(
-                                                text: phone,
-                                              ),
-                                              keyboardType: TextInputType.phone,
-                                              decoration: InputDecoration(
-                                                hintText: 'กรอกเบอร์',
-                                                isDense: true,
-                                                contentPadding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 8,
-                                                      horizontal: 8,
-                                                    ),
-                                                border: InputBorder.none,
-                                                counterText: '',
-                                              ),
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                color: textColor,
-                                              ),
-                                              textAlign:
-                                                  TextAlign
-                                                      .right, // เพิ่มบรรทัดนี้ให้ชิดขวา
-                                              maxLength: 10,
-                                              inputFormatters: [
-                                                FilteringTextInputFormatter
-                                                    .digitsOnly,
-                                                LengthLimitingTextInputFormatter(
-                                                  10,
-                                                ),
-                                              ],
-                                              onChanged: (val) async {
-                                                if (userDoc != null) {
-                                                  await userDoc.set({
-                                                    'phone': val,
-                                                  }, SetOptions(merge: true));
-                                                  setState(() {
-                                                    phone = val;
-                                                  });
-                                                }
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                );
-              },
+        children: [
+          if (user != null)
+            ProfileCard(
+              userDoc: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid),
+              email: user.email ?? '-',
+              fallbackName: user.displayName ?? '',
             ),
-            const SizedBox(height: 16),
-            Center(
-              child: FutureBuilder<PackageInfo>(
-                future: PackageInfo.fromPlatform(),
-                builder:
-                    (context, snapshot) => Text(
-                      'เวอร์ชันแอป ${snapshot.data?.version ?? '-'}',
-                      style: TextStyle(color: theme.disabledColor),
-                    ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            // หน้าข้อความ แอดมินแก้ได้จากหน้า Super Admin
-            for (final (page, icon) in [
-              (AppContentPage.help, Icons.help_outline),
-              (AppContentPage.terms, Icons.article_outlined),
-              (AppContentPage.privacy, Icons.privacy_tip_outlined),
-            ])
-              ListTile(
-                leading: Icon(icon),
-                title: Text(page.title, style: TextStyle(color: textColor)),
-                onTap: () => _showContentPage(context, page),
-              ),
-            // ตั้งค่าบัญชีผู้ใช้
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: Text(
-                'ตั้งค่าบัญชีผู้ใช้',
-                style: TextStyle(color: textColor),
-              ),
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => const _DeleteAccountDialog(),
-                );
-              },
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.logout),
-                label: const Text('ออกจากระบบ'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+          const SizedBox(height: 16),
+          // ธีมของแอป: ตามระบบ / สว่าง / มืด (จำไว้ในเครื่อง)
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('ธีมของแอป'),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: SegmentedButton<ThemeMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: ThemeMode.system,
+                    icon: Icon(Icons.brightness_auto),
+                    label: Text('ตามระบบ'),
                   ),
-                ),
-                onPressed: () async {
-                  await FirebaseAuth.instance.signOut();
-                  if (!context.mounted) return;
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    icon: Icon(Icons.light_mode),
+                    label: Text('สว่าง'),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    icon: Icon(Icons.dark_mode),
+                    label: Text('มืด'),
+                  ),
+                ],
+                selected: {themeController.value},
+                onSelectionChanged:
+                    (selection) => themeController.setMode(selection.first),
               ),
             ),
-          ],
-        ),
+          ),
+          // หน้าข้อความ แอดมินแก้ได้จากหน้า Super Admin
+          for (final (page, icon) in const [
+            (AppContentPage.help, Icons.help_outline),
+            (AppContentPage.terms, Icons.article_outlined),
+            (AppContentPage.privacy, Icons.privacy_tip_outlined),
+          ])
+            ListTile(
+              leading: Icon(icon),
+              title: Text(page.title),
+              onTap: () => _showContentPage(context, page),
+            ),
+          ListTile(
+            leading: Icon(Icons.no_accounts_outlined, color: scheme.error),
+            title: Text('ลบบัญชีผู้ใช้', style: TextStyle(color: scheme.error)),
+            onTap:
+                () => showDialog<void>(
+                  context: context,
+                  builder: (_) => const DeleteAccountDialog(),
+                ),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            icon: const Icon(Icons.logout),
+            label: const Text('ออกจากระบบ'),
+            style: FilledButton.styleFrom(
+              backgroundColor: scheme.error,
+              foregroundColor: scheme.onError,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            onPressed: FirebaseAuth.instance.signOut,
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder:
+                  (context, snapshot) => Text(
+                    'เวอร์ชันแอป ${snapshot.data?.version ?? '-'}',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   void _showContentPage(BuildContext context, AppContentPage page) {
-    showDialog(
+    showDialog<void>(
       context: context,
       builder:
           (dialogContext) => AlertDialog(
@@ -488,126 +130,6 @@ class ProfileScreen extends StatelessWidget {
               ),
             ],
           ),
-    );
-  }
-
-  // เพิ่มฟังก์ชันแปลงชื่อไอคอนเป็น IconData
-  IconData _iconFromName(String name) {
-    switch (name) {
-      case 'face':
-        return Icons.face;
-      case 'star':
-        return Icons.star;
-      case 'pets':
-        return Icons.pets;
-      case 'emoji_emotions':
-        return Icons.emoji_emotions;
-      default:
-        return Icons.person;
-    }
-  }
-}
-
-/// ขอรหัสผ่านอีกครั้งก่อนลบบัญชี เพื่อให้ลบข้อมูลใน Firestore และบัญชีเข้าสู่ระบบได้ครบ
-class _DeleteAccountDialog extends StatefulWidget {
-  const _DeleteAccountDialog();
-
-  @override
-  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
-}
-
-class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
-  final _passwordController = TextEditingController();
-  bool _deleting = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _delete() async {
-    if (_passwordController.text.isEmpty) {
-      setState(() => _error = 'กรุณากรอกรหัสผ่าน');
-      return;
-    }
-    setState(() {
-      _deleting = true;
-      _error = null;
-    });
-    try {
-      await AccountService().deleteAccount(password: _passwordController.text);
-      // AuthGate จะแสดงหน้าเข้าสู่ระบบเอง เหลือแค่ปิดหน้าต่างนี้
-      if (!mounted) return;
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    } on FirebaseAuthException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _deleting = false;
-        _error = switch (error.code) {
-          'wrong-password' || 'invalid-credential' => 'รหัสผ่านไม่ถูกต้อง',
-          'too-many-requests' => 'ลองผิดหลายครั้งเกินไป กรุณารอสักครู่',
-          _ => 'ไม่สามารถลบบัญชีได้ กรุณาลองใหม่',
-        };
-      });
-    } on FirebaseException {
-      if (!mounted) return;
-      setState(() {
-        _deleting = false;
-        _error = 'ลบข้อมูลไม่สำเร็จ กรุณาลองใหม่';
-      });
-    } on StateError catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _deleting = false;
-        _error = error.message;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('ลบบัญชีผู้ใช้'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'ระบบจะยกเลิกคิวที่กำลังรอ ลบคูปองและข้อมูลโปรไฟล์ '
-            'แล้วลบบัญชีเข้าสู่ระบบ การดำเนินการนี้ย้อนกลับไม่ได้\n\n'
-            'กรอกรหัสผ่านเพื่อยืนยัน',
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _passwordController,
-            obscureText: true,
-            enabled: !_deleting,
-            decoration: InputDecoration(
-              labelText: 'รหัสผ่าน',
-              errorText: _error,
-            ),
-            onSubmitted: (_) => _delete(),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: _deleting ? null : () => Navigator.pop(context),
-          child: const Text('ยกเลิก'),
-        ),
-        TextButton(
-          onPressed: _deleting ? null : _delete,
-          child:
-              _deleting
-                  ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                  : const Text('ยืนยันลบ', style: TextStyle(color: Colors.red)),
-        ),
-      ],
     );
   }
 }

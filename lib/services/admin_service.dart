@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../models/queue_entry.dart';
 import '../utils/queue_position.dart';
 
 class AdminProfile {
@@ -36,10 +37,14 @@ class AdminProfile {
 }
 
 class AdminService {
-  AdminService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  AdminService({FirebaseFirestore? firestore, FirebaseAuth? auth})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _authOverride = auth;
 
   final FirebaseFirestore _firestore;
+  final FirebaseAuth? _authOverride;
+
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   /// A Super Admin is any account with a superAdmins/{uid} document. That
   /// collection is read-only for clients and is managed in the Firebase Console.
@@ -125,11 +130,20 @@ class AdminService {
     });
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> watchShopQueues(String shopId) {
+  /// The shop's active queues, oldest first.
+  Stream<List<QueueEntry>> watchShopQueues(String shopId) {
     return _firestore
         .collection('queues')
         .where('shopId', isEqualTo: shopId)
-        .snapshots();
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs.map(QueueEntry.fromSnapshot).toList()..sort(
+                (left, right) => (left.createdAt ?? DateTime.now()).compareTo(
+                  right.createdAt ?? DateTime.now(),
+                ),
+              ),
+        );
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchShopQueueHistory(
@@ -224,7 +238,7 @@ class AdminService {
     if (!closedStatuses.contains(outcome)) {
       throw ArgumentError.value(outcome, 'outcome');
     }
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUser = _auth.currentUser;
     if (currentUser == null) {
       throw StateError('กรุณาเข้าสู่ระบบอีกครั้ง');
     }

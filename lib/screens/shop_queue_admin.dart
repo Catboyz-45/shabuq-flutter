@@ -1,14 +1,16 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../models/queue_entry.dart';
+import '../models/shop.dart';
 import '../services/admin_service.dart';
 import '../services/queue_service.dart';
 import '../services/shop_service.dart';
 import '../utils/queue_position.dart';
 import 'redeem_coupon_dialog.dart';
+import '../theme/app_theme.dart';
 
 /// Live queue board for one shop: call the next queue per zone, add walk-ins,
 /// pause new bookings, and close queues as completed, no-show or cancelled.
@@ -29,8 +31,8 @@ class ShopQueueAdmin extends StatefulWidget {
 class _ShopQueueAdminState extends State<ShopQueueAdmin> {
   final _shopService = ShopService();
   final _queueService = QueueService();
-  late final Stream<Map<String, dynamic>?> _shop;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _queues;
+  late final Stream<Shop?> _shop;
+  late final Stream<List<QueueEntry>> _queues;
   String? _callingZone;
 
   String get _shopId => widget.admin.shopId;
@@ -152,18 +154,14 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Map<String, dynamic>?>(
+    return StreamBuilder<Shop?>(
       stream: _shop,
       builder: (context, shopSnapshot) {
         final shop = shopSnapshot.data;
-        final zones =
-            (shop?['zones'] as List<dynamic>? ?? const <dynamic>[])
-                .whereType<String>()
-                .toList();
-        if (zones.isEmpty) zones.add('ทั่วไป');
-        final accepting = shop?['acceptingQueues'] != false;
+        final zones = shop?.bookableZones ?? const ['ทั่วไป'];
+        final accepting = shop?.acceptingQueues ?? true;
 
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        return StreamBuilder<List<QueueEntry>>(
           stream: _queues,
           builder: (context, queueSnapshot) {
             if (queueSnapshot.hasError) {
@@ -172,29 +170,19 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
             if (!queueSnapshot.hasData || shop == null) {
               return const Center(child: CircularProgressIndicator());
             }
-            final byZone =
-                <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{
-                  for (final zone in zones) zone: [],
-                };
+            // Queues arrive oldest first; group today's by zone and set
+            // aside leftovers from earlier days.
+            final byZone = <String, List<QueueEntry>>{
+              for (final zone in zones) zone: [],
+            };
             final today = queueDateKey(DateTime.now());
-            final stale = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-            for (final document in queueSnapshot.data!.docs) {
-              if (isStaleQueue(
-                document.data()['queueDate'] as String?,
-                today: today,
-              )) {
-                stale.add(document);
-                continue;
+            final stale = <QueueEntry>[];
+            for (final queue in queueSnapshot.data!) {
+              if (queue.isStale(today)) {
+                stale.add(queue);
+              } else {
+                byZone.putIfAbsent(queue.zone, () => []).add(queue);
               }
-              final zone = document.data()['zone'] as String? ?? zones.first;
-              byZone.putIfAbsent(zone, () => []).add(document);
-            }
-            for (final list in byZone.values) {
-              list.sort(
-                (left, right) => _timeOf(
-                  left.data()['createdAt'],
-                ).compareTo(_timeOf(right.data()['createdAt'])),
-              );
             }
 
             return ListView(
@@ -245,16 +233,14 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                       leading: const Icon(Icons.history_toggle_off),
                       title: Text('คิวค้างจากวันก่อน ${stale.length} คิว'),
                       subtitle: Text(
-                        stale
-                            .map((doc) => doc.data()['queueLabel'] ?? '-')
-                            .join(', '),
+                        stale.map((queue) => queue.queueLabel).join(', '),
                       ),
                       trailing: FilledButton.tonal(
                         onPressed:
                             _closing
                                 ? null
                                 : () => _closeAll(
-                                  stale.map((doc) => doc.id).toList(),
+                                  stale.map((queue) => queue.id).toList(),
                                   title: 'ปิดคิวค้างจากวันก่อน',
                                 ),
                         child: const Text('ปิดทั้งหมด'),
@@ -268,7 +254,7 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                     zone: entry.key,
                     waiting:
                         entry.value
-                            .where((doc) => doc.data()['status'] == 'waiting')
+                            .where((queue) => queue.status == 'waiting')
                             .length,
                     calling: _callingZone == entry.key,
                     onCallNext:
@@ -281,10 +267,10 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Text('ไม่มีคิวในโซนนี้'),
                     ),
-                  for (final document in entry.value)
+                  for (final queue in entry.value)
                     _QueueCard(
-                      key: ValueKey(document.id),
-                      document: document,
+                      key: ValueKey(queue.id),
+                      queue: queue,
                       adminService: widget.adminService,
                     ),
                 ],
@@ -295,7 +281,7 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                           ? null
                           : () => _closeAll([
                             for (final list in byZone.values)
-                              for (final doc in list) doc.id,
+                              for (final queue in list) queue.id,
                           ], title: 'ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
                   icon: const Icon(Icons.nightlight_round),
                   label: const Text('ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
@@ -307,9 +293,6 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
       },
     );
   }
-
-  static DateTime _timeOf(Object? value) =>
-      value is Timestamp ? value.toDate() : DateTime.now();
 }
 
 class _ZoneHeader extends StatelessWidget {
@@ -354,11 +337,11 @@ class _ZoneHeader extends StatelessWidget {
 class _QueueCard extends StatefulWidget {
   const _QueueCard({
     super.key,
-    required this.document,
+    required this.queue,
     required this.adminService,
   });
 
-  final QueryDocumentSnapshot<Map<String, dynamic>> document;
+  final QueueEntry queue;
   final AdminService adminService;
 
   @override
@@ -407,35 +390,34 @@ class _QueueCardState extends State<_QueueCard> {
 
   Future<void> _setStatus(String status) => _run(
     () => widget.adminService.setQueueStatus(
-      queueId: widget.document.id,
+      queueId: widget.queue.id,
       status: status,
     ),
   );
 
   Future<void> _close(String outcome) => _run(
     () => widget.adminService.closeQueue(
-      queueId: widget.document.id,
+      queueId: widget.queue.id,
       outcome: outcome,
     ),
   );
 
   @override
   Widget build(BuildContext context) {
-    final data = widget.document.data();
-    final status = data['status'] as String? ?? 'waiting';
-    final calledAt = data['calledAt'];
+    final queue = widget.queue;
+    final status = queue.status;
+    final calledAt = queue.calledAt;
     final calledMinutes =
-        calledAt is Timestamp
-            ? DateTime.now().difference(calledAt.toDate()).inMinutes
-            : 0;
+        calledAt == null ? 0 : DateTime.now().difference(calledAt).inMinutes;
     final canSkip = calledMinutes >= noShowGraceMinutes;
-    final name = (data['customerName'] as String? ?? '').trim();
-    final walkIn = data['walkIn'] == true;
+    final name = queue.customerName.trim();
+    final walkIn = queue.walkIn;
 
+    final statusColors = StatusColors.of(context);
     final (String statusText, Color statusColor) = switch (status) {
-      'called' => ('เรียกแล้ว $calledMinutes นาที', Colors.orange),
-      'serving' => ('กำลังใช้บริการ', Colors.teal),
-      _ => ('รอคิว', Colors.deepPurple),
+      'called' => ('เรียกแล้ว $calledMinutes นาที', statusColors.next),
+      'serving' => ('กำลังใช้บริการ', statusColors.serving),
+      _ => ('รอคิว', Theme.of(context).colorScheme.primary),
     };
 
     return Card(
@@ -447,7 +429,7 @@ class _QueueCardState extends State<_QueueCard> {
             Row(
               children: [
                 Text(
-                  data['queueLabel'] as String? ?? '-',
+                  queue.queueLabel,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -455,7 +437,7 @@ class _QueueCardState extends State<_QueueCard> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '${data['partySize'] ?? 0} คน'
+                    '${queue.partySize} คน'
                     '${walkIn ? ' • walk-in' : ''}'
                     '${name.isEmpty ? '' : ' • $name'}',
                   ),

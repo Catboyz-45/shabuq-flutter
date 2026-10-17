@@ -19,15 +19,18 @@ ShabuQ ช่วยให้ลูกค้ารับคิวร้านช�
 - รับคิวได้ทันทีโดยไม่ต้องจ่ายก่อน (ชำระที่ร้าน) ได้เลขคิวแยกตามโซนที่เริ่มนับใหม่ทุกวัน
 - ติดตามลำดับคิวและเวลารอโดยประมาณแบบ real-time
 - แจ้งเตือนในแอปเมื่อเหลือ 2 คิว และเมื่อร้านเรียกคิว ไม่ว่าจะเปิดหน้าไหนอยู่
-- เก็บคูปองส่วนลดไว้ใช้ที่หน้าร้าน (ใช้ได้ครั้งเดียวต่อบัญชี)
+- เก็บคูปองส่วนลดไว้ใช้ที่หน้าร้าน: กดใช้แล้วได้รหัส 6 ตัวให้พนักงานกรอกยืนยัน (ใช้ได้ครั้งเดียว รหัสหมดอายุใน 10 นาที)
 - ดูประวัติการใช้บริการ ยกเลิกคิว และลบบัญชีพร้อมข้อมูลที่เกี่ยวข้อง
+- เลือกธีมสว่าง มืด หรือตามระบบ
 
 **พนักงานร้าน**
 
 - กด "เรียกคิวถัดไป" แยกตามโซน แล้วอัปเดตสถานะ: รอคิว → เรียกแล้ว → กำลังใช้บริการ → เสร็จสิ้น
 - ข้ามคิวลูกค้าที่ไม่มาหลังเรียกแล้ว 5 นาที
 - เพิ่มคิว walk-in สำหรับลูกค้าที่ไม่มีแอป
-- ปิดรับคิวชั่วคราวเมื่อร้านเต็มหรือใกล้ปิด
+- ปิดรับคิวชั่วคราวเมื่อร้านเต็มหรือใกล้ปิด และกด "ปิดร้าน" เพื่อปิดคิวที่เหลือทั้งหมด
+- คิวที่ค้างจากวันก่อนจะแยกออกมาให้ปิดทีเดียว และไม่ถูกนับในลำดับคิวของวันนี้
+- ยืนยันคูปองของลูกค้าจากรหัสที่ลูกค้าแสดง
 - ดูสถิติ: คิววันนี้แยกตามผลลัพธ์ เวลารอเฉลี่ย 7 วัน และช่วงเวลาที่คนรับคิวเยอะ
 - แก้ไขรูปร้าน ที่อยู่ เบอร์โทร ราคา เวลาเปิด–ปิด และเมนู (ชื่อ หมวด คำอธิบาย ราคาเพิ่ม รูป) ของร้านตัวเอง
 
@@ -53,42 +56,44 @@ ShabuQ ช่วยให้ลูกค้ารับคิวร้านช�
 
 ```text
 lib/
-├── main.dart                  # จุดเริ่มต้นแอป ตรวจสถานะผู้ใช้และแยกหน้าตามสิทธิ์
-├── firebase_options.dart      # การตั้งค่า Firebase ตามแพลตฟอร์ม
-├── services/
-│   ├── account_service.dart   # ลบบัญชีพร้อมข้อมูลที่เกี่ยวข้อง
-│   ├── admin_service.dart     # สิทธิ์แอดมิน เรียกคิว ปิดคิว
+├── main.dart                    # จุดเริ่มต้นแอป ตรวจสถานะผู้ใช้และแยกหน้าตามสิทธิ์
+├── models/                      # ข้อมูลจาก Firestore ในรูป class แทน Map
+│   ├── queue_entry.dart
+│   └── shop.dart
+├── services/                    # อ่าน/เขียน Firestore (ฉีด FakeFirestore ได้ตอนเทสต์)
+│   ├── account_service.dart     # ลบบัญชีพร้อมข้อมูลที่เกี่ยวข้อง
+│   ├── admin_service.dart       # สิทธิ์แอดมิน เรียกคิว ปิดคิว
 │   ├── app_content_service.dart # ข้อความหน้าช่วยเหลือ/ข้อกำหนด/นโยบาย
-│   ├── banner_service.dart    # แบนเนอร์หน้าแรก
+│   ├── banner_service.dart      # แบนเนอร์หน้าแรก
+│   ├── coupon_service.dart      # รหัสใช้คูปองที่หน้าร้าน
 │   ├── menu_service.dart
 │   ├── promo_code_service.dart
-│   ├── queue_service.dart     # รับคิว ออกเลขคิว walk-in ลำดับคิว
+│   ├── queue_service.dart       # รับคิว ออกเลขคิว walk-in ลำดับคิว
 │   └── shop_service.dart
-├── utils/                     # ตรรกะที่ไม่ผูกกับ UI และมี unit test
-│   ├── auth_messages.dart     # ข้อความ error ภาษาไทย
-│   ├── image_source.dart      # ตรวจลิงก์รูปภาพ
+├── theme/                       # สีทั้งหมดของแอป โหมดสว่าง/มืด และตัวเลือกธีม
+├── utils/                       # ตรรกะที่ไม่ผูกกับ UI และมี unit test
+│   ├── auth_messages.dart       # ข้อความ error ภาษาไทย
+│   ├── image_source.dart        # ตรวจลิงก์รูปภาพ
 │   ├── payment_calculator.dart
-│   ├── queue_position.dart    # ลำดับคิว เลขคิว เวลารอโดยประมาณ
-│   └── shop_stats.dart        # สถิติของร้าน
-├── widgets/
-│   ├── image_url_field.dart   # ช่องวางลิงก์รูปพร้อมพรีวิว
-│   ├── queue_alerts.dart      # แบนเนอร์แจ้งเตือนเมื่อใกล้ถึงคิว
-│   └── shop_image.dart        # แสดงรูปจากลิงก์หรือรูปในแอป
+│   ├── queue_position.dart      # ลำดับคิว เลขคิว วันที่ตามเวลาไทย เวลารอ
+│   ├── shop_form.dart           # ตรวจข้อมูลร้านก่อนบันทึก
+│   └── shop_stats.dart          # สถิติของร้าน
+├── widgets/                     # image_url_field, profile_card, queue_alerts, shop_image
 └── screens/
-    ├── main_screen.dart       # แท็บด้านล่างของลูกค้า
-    ├── auth_screen.dart       # เข้าสู่ระบบ สมัครสมาชิก ลืมรหัสผ่าน
-    ├── home_screen.dart       # รายชื่อร้าน
-    ├── shop_screen.dart       # ข้อมูลร้าน เมนู และรับคิว
-    ├── queue_screen.dart      # คิวของฉันและประวัติ
-    ├── promotions_screen.dart # คูปองส่วนลด
-    ├── profile_screen.dart
-    ├── admin_screen.dart      # หน้า Super Admin และโครงหน้าแอดมินร้าน
-    ├── banner_admin.dart      # จัดการแบนเนอร์หน้าแรก
-    ├── app_content_admin.dart # แก้ข้อความในแอป
-    ├── shop_queue_admin.dart  # จัดการคิวของร้าน
-    ├── shop_stats_admin.dart  # สถิติของร้าน
-    ├── shop_menu_admin.dart
-    └── promo_code_admin.dart
+    ├── main_screen.dart         # แท็บด้านล่างของลูกค้า
+    ├── auth_screen.dart         # เข้าสู่ระบบ สมัครสมาชิก ลืมรหัสผ่าน
+    ├── home_screen.dart, shop_screen.dart, queue_screen.dart
+    ├── promotions_screen.dart, profile_screen.dart, delete_account_dialog.dart
+    ├── admin_screen.dart        # หน้า Super Admin
+    ├── shop_form_dialog.dart, admin_account_dialog.dart
+    ├── banner_admin.dart, app_content_admin.dart, promo_code_admin.dart
+    ├── shop_admin_view.dart     # หน้าแอดมินร้าน (คิว สถิติ เมนู ข้อมูลร้าน)
+    ├── shop_queue_admin.dart, shop_stats_admin.dart, shop_menu_admin.dart
+    └── redeem_coupon_dialog.dart
+test/                            # unit, service (Firestore จำลอง) และ widget tests
+tool/
+├── seed_emulator.mjs            # ข้อมูลตัวอย่างสำหรับ Emulator
+└── test_rules.mjs               # ทดสอบ Security Rules กับ Emulator
 ```
 
 ## การติดตั้งและรัน
@@ -181,8 +186,9 @@ Security Rules ยอมรับรูปเฉพาะลิงก์ `https:
 | `queueTickets/{ticketId}` | สำเนาไม่ระบุตัวตน: ร้าน โซน เลขคิว สถานะ เวลา | ผู้ใช้ที่ล็อกอิน (ใช้นับคิวข้างหน้า) |
 | `shops/{shopId}/queueCounters/{A–Z}` | เลขคิวล่าสุดของแต่ละโซนในวันนั้น | ผู้ใช้ที่ล็อกอิน |
 | `queueHistory/{ticketId}` | คิวที่ปิดแล้ว: เสร็จสิ้น ไม่มา หรือร้านยกเลิก | เจ้าของคิวและแอดมินร้าน |
+| `couponRedemptions/{รหัส}` | รหัสใช้คูปอง 6 ตัว อายุ 10 นาที | เจ้าของรหัสและพนักงานร้าน (อ่านทีละรหัส ไม่ให้ list) |
 
-ตอนรับคิว แอปจะเพิ่มเลขใน counter สร้างคิว และสร้าง ticket ใน transaction เดียวกัน Security Rules บังคับให้เลขเพิ่มทีละ 1 และตรงกับคิวที่สร้าง ส่วนเวลารอโดยประมาณคำนวณจากจำนวนคิวข้างหน้า คูณค่าเฉลี่ยของระยะห่างระหว่างการกด "เรียกคิวถัดไป" (`minutesPerQueue` ของร้าน ถ้ายังไม่มีข้อมูลจะใช้ 10 นาที)
+ตอนรับคิว แอปจะเพิ่มเลขใน counter สร้างคิว และสร้าง ticket ใน transaction เดียวกัน Security Rules บังคับให้เลขเพิ่มทีละ 1 และตรงกับคิวที่สร้าง ทุกคิวมี `queueDate` เป็นวันที่ตามเวลาไทย (UTC+7) Security Rules คำนวณวันที่เดียวกันจากนาฬิกาของ server จึงตั้งวันที่เองไม่ได้ และเลขคิวไม่ขึ้นกับเขตเวลาในเครื่อง คิวของวันก่อนที่ยังไม่ได้ปิดจะไม่ถูกนับในลำดับคิว ส่วนเวลารอโดยประมาณคำนวณจากจำนวนคิวข้างหน้า คูณค่าเฉลี่ยของระยะห่างระหว่างการกด "เรียกคิวถัดไป" (`minutesPerQueue` ของร้าน ถ้ายังไม่มีข้อมูลจะใช้ 10 นาที)
 
 ## การตรวจสอบคุณภาพโค้ด
 
@@ -191,18 +197,26 @@ flutter analyze
 flutter test
 ```
 
-ควรรันทั้งสองคำสั่งและแก้ข้อผิดพลาดทั้งหมดก่อน merge หรือเผยแพร่ release
+ทดสอบ Security Rules กับ Emulator (ต้องมี Java 21):
+
+```bash
+firebase emulators:exec --only auth,firestore "node tool/seed_emulator.mjs && node tool/test_rules.mjs"
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) รันทั้งหมดนี้ทุกครั้งที่ push หรือเปิด PR: ตรวจ format, `flutter analyze`, `flutter test` และชุดทดสอบ Rules บน Emulator
 
 สถานะการตรวจล่าสุด (Flutter 3.47.7):
 
 - `flutter analyze` — ผ่าน ไม่พบปัญหา
-- `flutter test` — ผ่าน 26 tests
-- รันบนเว็บกับ Firebase Emulator และทดสอบด้วยมือ: รับคิว ลำดับคิวและการแจ้งเตือนแบบ real-time เรียกคิว ข้ามคิวที่ไม่มา walk-in ปิดรับคิว สถิติ แบนเนอร์ เมนูพร้อมรูป ข้อความในแอป และ Security Rules ที่กันการอ่านคิวของคนอื่นและการแก้ข้อมูลข้ามสิทธิ์
+- `flutter test` — ผ่าน 54 tests (unit, service กับ Firestore จำลอง และ widget)
+- `tool/test_rules.mjs` — ผ่าน 33 กรณี
+- รันบนเว็บกับ Firebase Emulator และทดสอบด้วยมือ: รับคิว ลำดับคิวและการแจ้งเตือน เรียกคิว คิวค้างข้ามวัน walk-in คูปองที่หน้าร้าน ธีมมืด โปรไฟล์ เพิ่มร้าน แบนเนอร์ เมนู และข้อความในแอป
 
 ## สิ่งที่ได้เรียนรู้
 
 - ออกแบบแอป Flutter แบบหลายหน้าจอ แยก service, ตรรกะที่ทดสอบได้ และ UI ออกจากกัน
 - ใช้ข้อมูลแบบ real-time จาก Firestore และรับมือกับ snapshot จาก cache
+- เขียนเทสต์หลายระดับ: unit, service กับ Firestore จำลอง, widget และ Security Rules บน Emulator พร้อม CI
 - ออกแบบ Security Rules ที่ตรวจทั้งสิทธิ์และความถูกต้องของข้อมูลใน transaction
 - ออกแบบ flow ให้ใช้งานได้จริงทั้งฝั่งลูกค้าและฝั่งพนักงานร้าน
 
@@ -211,13 +225,12 @@ flutter test
 โปรเจกต์นี้จัดทำขึ้นเพื่อการเรียนรู้และนำเสนอผลงาน ยังไม่ได้ทดสอบกับร้านอาหารจริง
 
 - การแจ้งเตือนทำงานเฉพาะตอนเปิดแอปอยู่ การส่ง push notification ตอนปิดแอปต้องใช้ Firebase Cloud Messaging คู่กับ Cloud Functions ซึ่งต้องใช้แพ็กเกจ Blaze
-- เลขคิวเริ่มใหม่ตามวันที่ของเครื่องที่ออกเลขคิว
 - บน Firebase Spark plan การลบแอดมินหมายถึงการถอนสิทธิ์และให้บัญชีกลับเป็นผู้ใช้ทั่วไป การลบบัญชี Auth ของคนอื่นต้องทำผ่าน trusted backend ที่ใช้ Firebase Admin SDK
 
 ## แนวทางพัฒนาต่อ
 
 - Push notification ผ่าน Firebase Cloud Messaging และ Cloud Functions
-- Widget test และ integration test สำหรับ flow รับคิวและเรียกคิว
+- Integration test บนอุปกรณ์จริงสำหรับ flow รับคิวและเรียกคิว
 - จอแสดงเลขคิวหน้าร้าน และ QR ให้ลูกค้า walk-in สแกนรับคิวเอง
 - รองรับหลายภาษาและปรับ accessibility
 

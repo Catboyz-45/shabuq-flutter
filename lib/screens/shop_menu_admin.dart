@@ -6,6 +6,7 @@ import '../services/menu_service.dart';
 import '../utils/image_source.dart';
 import '../widgets/image_url_field.dart';
 import '../widgets/shop_image.dart';
+import '../theme/app_theme.dart';
 
 class ShopMenuAdmin extends StatefulWidget {
   const ShopMenuAdmin({super.key, required this.admin});
@@ -227,7 +228,7 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                 child: const Text('ยกเลิก'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                style: destructiveButtonStyle(context),
                 onPressed: () => Navigator.pop(context, true),
                 child: const Text('ลบ'),
               ),

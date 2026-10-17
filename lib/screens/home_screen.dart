@@ -7,6 +7,7 @@ import '../services/banner_service.dart';
 import '../services/shop_service.dart';
 import '../widgets/shop_image.dart';
 import 'shop_screen.dart';
+import '../models/shop.dart';
 
 // หน้าหลักของแอป
 class HomeScreen extends StatefulWidget {
@@ -21,8 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // แบนเนอร์มาจาก Firestore แอดมินเพิ่ม/แก้ได้จากหน้า Super Admin
   late final Stream<List<PromoBanner>> _banners =
       BannerService().watchBanners();
-  late final Stream<List<Map<String, dynamic>>> _shops =
-      _shopService.watchShops();
+  late final Stream<List<Shop>> _shops = _shopService.watchShops();
   final PageController _bannerController =
       PageController(); // ควบคุมการเลื่อน banner
   int _bannerIndex = 0; // ตำแหน่งปัจจุบันของ banner
@@ -58,11 +58,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _openShop(Map<String, dynamic> shop) async {
+  Future<void> _openShop(Shop shop) async {
     final tabs = DefaultTabController.maybeOf(context);
     final booked = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => ShopScreen(shopInfo: shop)),
+      MaterialPageRoute(builder: (_) => ShopScreen(shop: shop)),
     );
     // แท็บที่ 2 คือ "คิวของฉัน"
     if (booked == true) tabs?.animateTo(1);
@@ -70,18 +70,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openBannerShop(String shopId) async {
     final shop = await _shopService.watchShop(shopId).first;
-    if (!mounted || shop == null || shop['active'] == false) return;
+    if (!mounted || shop == null || !shop.active) return;
     await _openShop(shop);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 149, 144, 248),
-        foregroundColor: Colors.white,
-        title: const Text('ShabuQ'),
-      ),
+      appBar: AppBar(title: const Text('ShabuQ')),
       body: Column(
         children: [
           StreamBuilder<List<PromoBanner>>(
@@ -140,8 +136,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           shape: BoxShape.circle,
                           color:
                               i == _bannerIndex % banners.length
-                                  ? Colors.deepPurple
-                                  : Colors.grey,
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
                         ),
                       ),
                     ),
@@ -158,18 +156,14 @@ class _HomeScreenState extends State<HomeScreen> {
               alignment: Alignment.centerLeft,
               child: Text(
                 'เลือกร้านชาบู',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
             ),
           ),
           const SizedBox(height: 17),
           // แสดงร้านชาบูในรูปแบบ Grid
           Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
+            child: StreamBuilder<List<Shop>>(
               stream: _shops,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
@@ -196,11 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemBuilder: (context, index) {
                     final shop = shops[index];
                     return _MenuCard(
-                      tile: _Tile(
-                        shop['name'] as String? ?? '',
-                        shop['image'] as String? ?? '',
-                        () => _openShop(shop),
-                      ),
+                      tile: _Tile(shop.name, shop.image, () => _openShop(shop)),
                     );
                   },
                 );
@@ -233,7 +223,7 @@ class _MenuCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
           boxShadow: const [BoxShadow(blurRadius: 6, color: Colors.black12)],
         ),
         child: Column(

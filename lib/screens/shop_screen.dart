@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,13 +7,18 @@ import '../services/queue_service.dart';
 import '../services/shop_service.dart';
 import '../utils/payment_calculator.dart';
 import '../widgets/shop_image.dart';
+import '../theme/app_theme.dart';
+import '../models/queue_entry.dart';
+import '../models/shop.dart';
 
 /// Shop details, its menu and the one-tap queue booking. Pops with `true`
 /// after a successful booking so the caller can switch to the queue tab.
 class ShopScreen extends StatefulWidget {
-  const ShopScreen({super.key, required this.shopInfo});
+  const ShopScreen({super.key, required this.shop});
 
-  final Map<String, dynamic> shopInfo;
+  /// The shop as listed on the home screen; the page then follows live
+  /// updates such as pausing bookings.
+  final Shop shop;
 
   @override
   State<ShopScreen> createState() => _ShopScreenState();
@@ -28,12 +32,12 @@ class _ShopScreenState extends State<ShopScreen> {
   int _party = 2;
   bool _booking = false;
 
-  late final Stream<Map<String, dynamic>?> _shop;
-  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _myQueue;
+  late final Stream<Shop?> _shop;
+  late final Stream<QueueEntry?> _myQueue;
   late final Stream<int> _waitingCount;
   late final Stream<List<MenuItem>> _menu;
 
-  String get _shopId => widget.shopInfo['id'] as String;
+  String get _shopId => widget.shop.id;
 
   @override
   void initState() {
@@ -44,14 +48,6 @@ class _ShopScreenState extends State<ShopScreen> {
     );
     _waitingCount = _queueService.watchWaitingCount(_shopId);
     _menu = _menuService.watchMenu(_shopId);
-  }
-
-  List<String> _zonesOf(Map<String, dynamic> shop) {
-    final zones = (shop['zones'] as List<dynamic>? ?? const <dynamic>[])
-        .whereType<String>()
-        .where((zone) => zone.trim().isNotEmpty)
-        .toList(growable: false);
-    return zones.isEmpty ? const ['ทั่วไป'] : zones;
   }
 
   Future<void> _book(String zone) async {
@@ -102,8 +98,8 @@ class _ShopScreenState extends State<ShopScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _openMap(Map<String, dynamic> shop) async {
-    final query = '${shop['name'] ?? ''} ${shop['location'] ?? ''}'.trim();
+  Future<void> _openMap(Shop shop) async {
+    final query = '${shop.name} ${shop.location}'.trim();
     final uri = Uri.https('www.google.com', '/maps/search/', {
       'api': '1',
       'query': query,
@@ -115,29 +111,28 @@ class _ShopScreenState extends State<ShopScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Map<String, dynamic>?>(
+    return StreamBuilder<Shop?>(
       stream: _shop,
-      initialData: widget.shopInfo,
+      initialData: widget.shop,
       builder: (context, shopSnapshot) {
-        final shop = shopSnapshot.data ?? widget.shopInfo;
-        final zones = _zonesOf(shop);
+        final shop = shopSnapshot.data ?? widget.shop;
+        final zones = shop.bookableZones;
         final zone =
             zones.contains(_selectedZone) ? _selectedZone! : zones.first;
-        final price = shop['pricePerPerson'] as int? ?? 0;
-        final accepting =
-            shop['acceptingQueues'] != false && shop['active'] != false;
+        final price = shop.pricePerPerson;
+        final accepting = shop.canBook;
 
         return Scaffold(
-          appBar: AppBar(
-            backgroundColor: const Color.fromARGB(255, 149, 144, 248),
-            foregroundColor: Colors.white,
-            title: Text(shop['name'] as String? ?? 'ร้านชาบู'),
-          ),
-          body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          appBar: AppBar(title: Text(shop.name)),
+          body: StreamBuilder<QueueEntry?>(
             stream: _myQueue,
             builder: (context, queueSnapshot) {
-              final activeQueue = queueSnapshot.data?.data();
-              final hasQueue = !queueSnapshot.hasData || activeQueue != null;
+              final activeQueue = queueSnapshot.data;
+              // Until the first snapshot arrives, assume a queue exists so
+              // the button can't be pressed twice.
+              final hasQueue =
+                  queueSnapshot.connectionState != ConnectionState.active ||
+                  activeQueue != null;
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
@@ -161,8 +156,8 @@ class _ShopScreenState extends State<ShopScreen> {
                       child: ListTile(
                         leading: const Icon(Icons.info_outline),
                         title: Text(
-                          'คุณมีคิว ${activeQueue['queueLabel'] ?? ''} '
-                          'ที่ ${activeQueue['shopName'] ?? ''} อยู่แล้ว',
+                          'คุณมีคิว ${activeQueue.queueLabel} '
+                          'ที่ ${activeQueue.shopName} อยู่แล้ว',
                         ),
                         subtitle: const Text('ยกเลิกคิวเดิมก่อนรับคิวใหม่'),
                       ),
@@ -190,10 +185,10 @@ class _ShopScreenState extends State<ShopScreen> {
                     children: [
                       IconButton(
                         tooltip: 'ลดจำนวนคน',
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.remove_circle,
                           size: 40,
-                          color: Colors.red,
+                          color: Theme.of(context).colorScheme.error,
                         ),
                         onPressed:
                             _party > 1 ? () => setState(() => _party--) : null,
@@ -203,19 +198,19 @@ class _ShopScreenState extends State<ShopScreen> {
                         child: Text(
                           '$_party',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.bold,
-                            color: Colors.deepPurple,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
                       ),
                       IconButton(
                         tooltip: 'เพิ่มจำนวนคน',
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.add_circle,
                           size: 40,
-                          color: Colors.green,
+                          color: StatusColors.of(context).success,
                         ),
                         onPressed:
                             _party < 10 ? () => setState(() => _party++) : null,
@@ -244,7 +239,6 @@ class _ShopScreenState extends State<ShopScreen> {
                             : const Icon(Icons.confirmation_number),
                     label: const Text('รับคิว', style: TextStyle(fontSize: 20)),
                     style: FilledButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
                   ),
@@ -268,25 +262,21 @@ class _ShopInfoCard extends StatelessWidget {
     required this.onOpenMap,
   });
 
-  final Map<String, dynamic> shop;
+  final Shop shop;
   final Stream<int> waitingCount;
   final VoidCallback onOpenMap;
 
   @override
   Widget build(BuildContext context) {
-    final hours = (shop['openingHours'] as String? ?? '').trim();
-    final location = (shop['location'] as String? ?? '').trim();
-    final phone = (shop['phone'] as String? ?? '').trim();
+    final hours = shop.openingHours.trim();
+    final location = shop.location.trim();
+    final phone = shop.phone.trim();
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ShopImage(
-            source: shop['image'] as String? ?? '',
-            width: double.infinity,
-            height: 160,
-          ),
+          ShopImage(source: shop.image, width: double.infinity, height: 160),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -306,7 +296,7 @@ class _ShopInfoCard extends StatelessWidget {
                 ),
                 _InfoRow(
                   icon: Icons.payments,
-                  text: '฿${shop['pricePerPerson'] ?? '-'} ต่อคน',
+                  text: '฿${shop.pricePerPerson} ต่อคน',
                 ),
                 if (hours.isNotEmpty)
                   _InfoRow(icon: Icons.schedule, text: 'เปิด $hours'),
@@ -348,7 +338,7 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: Colors.deepPurple),
+          Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -405,9 +395,9 @@ class _ShopMenu extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 12, bottom: 4),
                 child: Text(
                   entry.key,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
@@ -466,7 +456,10 @@ class _MenuItemTile extends StatelessWidget {
             child: Text(
               item.price > 0 ? '+฿${item.price}' : 'รวมในบุฟเฟ่ต์',
               style: TextStyle(
-                color: item.price > 0 ? Colors.deepPurple : Colors.grey,
+                color:
+                    item.price > 0
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                 fontWeight: item.price > 0 ? FontWeight.bold : null,
                 fontSize: 12,
               ),

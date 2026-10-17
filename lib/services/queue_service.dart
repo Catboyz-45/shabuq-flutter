@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../models/queue_entry.dart';
 import '../utils/queue_position.dart';
 
 /// Queue access for customers and shop staff.
@@ -21,8 +22,11 @@ class QueueService {
   DocumentReference<Map<String, dynamic>> ticketOf(String ticketId) =>
       _firestore.collection('queueTickets').doc(ticketId);
 
-  Stream<DocumentSnapshot<Map<String, dynamic>>> watchMyQueue(String uid) {
-    return queueOf(uid).snapshots();
+  /// The customer's active queue, or null when they have none.
+  Stream<QueueEntry?> watchMyQueue(String uid) {
+    return queueOf(uid).snapshots().map(
+      (snapshot) => snapshot.exists ? QueueEntry.fromSnapshot(snapshot) : null,
+    );
   }
 
   /// Waiting tickets in a zone, as confirmed by the server. Snapshots served
@@ -68,11 +72,20 @@ class QueueService {
         .map((snapshot) => snapshot.size);
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> watchMyHistory(String uid) {
+  /// The customer's closed queues, newest first.
+  Stream<List<QueueEntry>> watchMyHistory(String uid) {
     return _firestore
         .collection('queueHistory')
         .where('userId', isEqualTo: uid)
-        .snapshots();
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs.map(QueueEntry.fromSnapshot).toList()..sort(
+                (left, right) => (right.completedAt ?? DateTime(0)).compareTo(
+                  left.completedAt ?? DateTime(0),
+                ),
+              ),
+        );
   }
 
   /// Gives the signed-in customer the next number in [zone]. Payment happens
