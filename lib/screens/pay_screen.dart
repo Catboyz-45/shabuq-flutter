@@ -197,6 +197,12 @@ class _PayScreenState extends State<PayScreen> {
           'status': 'waiting',
           'createdAt': createdAt,
         });
+        transaction.set(db.collection('queueTickets').doc(paymentRef.id), {
+          'shopId': widget.shopId,
+          'zone': widget.zone ?? 'ทั่วไป',
+          'status': 'waiting',
+          'createdAt': createdAt,
+        });
       });
 
       if (!mounted) return;

@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart'; // สำหรับ UI
 import 'package:firebase_core/firebase_core.dart'; // สำหรับเริ่มต้น Firebase
 import 'package:firebase_auth/firebase_auth.dart'; // สำหรับการจัดการผู้ใช้ (Authentication)
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shabuq_flutter/screens/main_screen.dart'; // หน้าหลักของแอป
 import 'firebase_options.dart'; // การตั้งค่า Firebase สำหรับแพลตฟอร์มต่าง ๆ
 import 'screens/admin_screen.dart';
@@ -18,6 +19,11 @@ Future<void> main() async {
         DefaultFirebaseOptions
             .currentPlatform, // เริ่มต้น Firebase ด้วย config ที่เหมาะกับแพลตฟอร์ม
   );
+  // รันด้วย --dart-define=USE_FIREBASE_EMULATOR=true เพื่อทดสอบกับ Firebase Emulator
+  if (const bool.fromEnvironment('USE_FIREBASE_EMULATOR')) {
+    await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+    FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+  }
   runApp(const MyApp()); // เรียกใช้งานแอปหลัก
 }
 
@@ -127,14 +133,34 @@ class _RoleRouter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final adminService = AdminService();
+    return _RoleStream(
+      stream: adminService.watchIsSuperAdmin(user),
+      builder: (isSuperAdmin) {
+        if (isSuperAdmin) return const AdminScreen(isSuperAdmin: true);
+        return _RoleStream(
+          stream: adminService.watchIsShopAdmin(user),
+          builder:
+              (isShopAdmin) =>
+                  isShopAdmin
+                      ? const AdminScreen(isSuperAdmin: false)
+                      : const MainTabs(),
+        );
+      },
+    );
+  }
+}
+
+class _RoleStream extends StatelessWidget {
+  const _RoleStream({required this.stream, required this.builder});
+
+  final Stream<bool> stream;
+  final Widget Function(bool hasRole) builder;
+
+  @override
+  Widget build(BuildContext context) {
     return StreamBuilder<bool>(
-      stream: adminService.watchCurrentUserIsAdmin(user),
+      stream: stream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
         if (snapshot.hasError) {
           return Scaffold(
             body: Center(
@@ -152,10 +178,12 @@ class _RoleRouter extends StatelessWidget {
             ),
           );
         }
-        if (snapshot.data == true) {
-          return AdminScreen(isSuperAdmin: adminService.isSuperAdmin(user));
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
-        return const MainTabs();
+        return builder(snapshot.data!);
       },
     );
   }

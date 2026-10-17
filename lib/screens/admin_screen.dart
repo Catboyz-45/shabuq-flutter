@@ -55,7 +55,7 @@ class _AdminScreenState extends State<AdminScreen> {
           final email =
               (document.data()['email'] as String? ?? '').trim().toLowerCase();
           return email.isNotEmpty &&
-              email != superAdminEmail &&
+              document.id != FirebaseAuth.instance.currentUser?.uid &&
               !adminIds.contains(document.id);
         }).toList();
 
@@ -680,7 +680,9 @@ class _AdminScreenState extends State<AdminScreen> {
                               child: Icon(Icons.shield),
                             ),
                             title: const Text('Super Admin'),
-                            subtitle: const Text(superAdminEmail),
+                            subtitle: Text(
+                              FirebaseAuth.instance.currentUser?.email ?? '',
+                            ),
                             trailing: const Chip(label: Text('ลบไม่ได้')),
                           ),
                         ),
@@ -1093,6 +1095,7 @@ class _ShopQueueManagement extends StatelessWidget {
                   ),
                 ...queues.map(
                   (document) => _ActiveQueueCard(
+                    key: ValueKey(document.id),
                     document: document,
                     adminService: adminService,
                   ),
@@ -1151,7 +1154,11 @@ class _ShopQueueManagement extends StatelessWidget {
 }
 
 class _ActiveQueueCard extends StatefulWidget {
-  const _ActiveQueueCard({required this.document, required this.adminService});
+  const _ActiveQueueCard({
+    super.key,
+    required this.document,
+    required this.adminService,
+  });
 
   final QueryDocumentSnapshot<Map<String, dynamic>> document;
   final AdminService adminService;

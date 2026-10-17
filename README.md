@@ -77,7 +77,15 @@ lib/
 
 ### การเริ่มต้น Super Admin
 
-สมัครสมาชิกในแอปด้วยอีเมล `admin@gmail.com` และตั้งรหัสผ่านผ่านหน้าสมัครสมาชิกตามปกติ ระบบจะพาอีเมลนี้ไปยังหน้า `ShabuQ Admin` อัตโนมัติ บัญชีนี้เป็น Super Admin แบบถาวรและไม่สามารถลบหรือลดสิทธิ์ผ่านแอปได้
+สิทธิ์ Super Admin ไม่ได้ผูกกับอีเมลอีกต่อไป (เดิมใครสมัครด้วยอีเมลที่กำหนดก่อนก็ได้สิทธิ์ทันที) ให้ทำดังนี้
+
+1. สมัครสมาชิกในแอปตามปกติ
+2. เปิด Firebase Console → Authentication แล้วคัดลอก User UID ของบัญชีนั้น
+3. ไปที่ Firestore → สร้าง collection `superAdmins` และสร้างเอกสารที่มี ID เป็น UID นั้น (ใส่ field อะไรก็ได้ เช่น `email`)
+
+แอปจะพาบัญชีนี้ไปหน้า `ShabuQ Admin` อัตโนมัติ Security Rules ห้ามแอปเขียน collection `superAdmins` จึงเพิ่มหรือลบ Super Admin ได้จาก Console เท่านั้น
+
+> **ถ้าอัปเดตจากเวอร์ชันเดิม:** ให้สร้าง `superAdmins/{uid}` ของบัญชีแอดมินเดิมก่อน deploy rules ชุดใหม่ ไม่เช่นนั้นจะเข้าหน้าแอดมินไม่ได้ และคิวที่ค้างอยู่จากเวอร์ชันเดิมจะไม่มี `queueTickets` จึงไม่ถูกนับในลำดับคิว ควรเคลียร์คิวเก่าก่อน
 
 เพื่อเพิ่มแอดมินอื่น ให้ผู้ใช้นั้นสมัครสมาชิกก่อน จากนั้น Super Admin เลือกบัญชี กำหนดร้าน และมอบสิทธิ์จากหน้าแอดมิน แอดมินทั่วไปจะเห็นและจัดการคิว เมนู และราคาของร้านที่ได้รับมอบหมายเท่านั้น โดย Firestore Security Rules ตรวจ `shopId` ทุกครั้ง ระบบไม่เก็บหรือฝังรหัสผ่านแอดมินไว้ในซอร์สโค้ด
 
@@ -108,6 +116,28 @@ firebase deploy --only firestore:rules,firestore:indexes
 
 ตรวจสอบชื่อ Firebase project ให้ถูกต้องก่อน deploy ทุกครั้ง
 
+### ทดลองกับ Firebase Emulator
+
+ทดสอบแอปและ Security Rules บนเครื่องได้โดยไม่แตะข้อมูลจริง (ต้องมี Java 21 ขึ้นไป):
+
+```bash
+firebase emulators:start --only auth,firestore
+```
+
+เปิดอีก terminal แล้วใส่ข้อมูลตัวอย่าง (บัญชีทดลองและรหัสผ่านอยู่ในหัวไฟล์ `tool/seed_emulator.mjs`):
+
+```bash
+node tool/seed_emulator.mjs
+```
+
+```bash
+flutter run -d chrome --dart-define=USE_FIREBASE_EMULATOR=true
+```
+
+### การคำนวณลำดับคิว
+
+คิวของผู้ใช้อยู่ที่ `queues/{uid}` ซึ่งอ่านได้เฉพาะเจ้าของและแอดมินร้าน ทุกคิวมีสำเนาแบบไม่ระบุตัวตนที่ `queueTickets/{paymentId}` (มีแค่ร้าน โซน สถานะ และเวลา) ผู้ใช้คนอื่นใช้สำเนานี้นับว่ามีคิวรออยู่ข้างหน้ากี่คิว หน้าคิวของฉันอัปเดตแบบ real-time ตามสถานะที่ร้านตั้ง
+
 ## การตรวจสอบคุณภาพโค้ด
 
 ```bash
@@ -120,8 +150,8 @@ flutter test
 สถานะการตรวจล่าสุด:
 
 - `flutter analyze` — ผ่าน ไม่พบปัญหา
-- `flutter test` — ผ่าน 5 tests
-- `flutter build apk --release` — ผ่าน
+- `flutter test` — ผ่าน 10 tests
+- `flutter run -d web-server` กับ Firebase Emulator — ทดสอบจองคิว ลำดับคิวแบบ real-time หน้าแอดมิน และการลบบัญชีด้วยมือ (Flutter 3.47.7)
 
 ## สิ่งที่ได้เรียนรู้
 

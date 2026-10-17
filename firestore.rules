@@ -10,9 +10,12 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
+    // Super Admins are granted by creating superAdmins/{uid} in the Firebase
+    // Console. Clients can never write that collection, so an email address
+    // alone can no longer grant admin access.
     function isSuperAdmin() {
       return signedIn() &&
-        request.auth.token.email == 'admin@gmail.com';
+        exists(/databases/$(database)/documents/superAdmins/$(request.auth.uid));
     }
 
     function isAdmin() {
@@ -123,6 +126,11 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    match /superAdmins/{uid} {
+      allow get: if isOwner(uid);
+      allow list, write: if false;
+    }
+
     match /admins/{adminId} {
       allow get: if isAdmin() || (signedIn() && adminId == request.auth.uid);
       allow list: if isSuperAdmin();
@@ -140,7 +148,7 @@ service cloud.firestore {
         ]) &&
         request.resource.data.uid == adminId &&
         request.resource.data.email is string &&
-        request.resource.data.email != 'admin@gmail.com' &&
+        !exists(/databases/$(database)/documents/superAdmins/$(adminId)) &&
         request.resource.data.email ==
           get(/databases/$(database)/documents/users/$(adminId)).data.email &&
         request.resource.data.displayName is string &&
@@ -154,7 +162,7 @@ service cloud.firestore {
         request.resource.data.updatedAt == request.time;
       allow update: if isSuperAdmin() &&
         adminId != request.auth.uid &&
-        resource.data.email != 'admin@gmail.com' &&
+        !exists(/databases/$(database)/documents/superAdmins/$(adminId)) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'displayName',
@@ -173,7 +181,7 @@ service cloud.firestore {
         request.resource.data.updatedAt == request.time;
       allow delete: if isSuperAdmin() &&
         adminId != request.auth.uid &&
-        resource.data.email != 'admin@gmail.com';
+        !exists(/databases/$(database)/documents/superAdmins/$(adminId));
     }
 
     match /shops/{shopId} {
@@ -303,9 +311,9 @@ service cloud.firestore {
     }
 
     match /queues/{queueId} {
-      // Queue documents contain operational queue data only. Authenticated users
-      // may read them so the client can calculate the position within a shop.
-      allow read: if signedIn();
+      // Queue documents name the customer, so only the customer and the shop's
+      // admins may read them. Positions are calculated from queueTickets.
+      allow read: if isOwner(queueId) || isShopAdminFor(resource.data.shopId);
       allow create: if isOwner(queueId) &&
         request.resource.data.keys().hasOnly([
           'userId',
@@ -341,7 +349,10 @@ service cloud.firestore {
         ) &&
         getAfter(
           /databases/$(database)/documents/payments/$(request.resource.data.paymentId)
-        ).data.userId == request.auth.uid;
+        ).data.userId == request.auth.uid &&
+        existsAfter(
+          /databases/$(database)/documents/queueTickets/$(request.resource.data.paymentId)
+        );
       allow update: if isShopAdminFor(resource.data.shopId) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status']) &&
@@ -371,6 +382,52 @@ service cloud.firestore {
             /databases/$(database)/documents/queueHistory/$(resource.data.paymentId)
           ).data.status == 'completed'
         );
+    }
+
+    // Anonymous public mirror of each active queue (id = paymentId). It holds
+    // no user data, so any signed-in user may read it to count queues ahead.
+    match /queueTickets/{ticketId} {
+      allow read: if signedIn();
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasOnly([
+          'shopId',
+          'zone',
+          'status',
+          'createdAt'
+        ]) &&
+        request.resource.data.status == 'waiting' &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(
+          /databases/$(database)/documents/queues/$(request.auth.uid)
+        ) &&
+        getAfter(
+          /databases/$(database)/documents/queues/$(request.auth.uid)
+        ).data.paymentId == ticketId &&
+        getAfter(
+          /databases/$(database)/documents/queues/$(request.auth.uid)
+        ).data.shopId == request.resource.data.shopId &&
+        getAfter(
+          /databases/$(database)/documents/queues/$(request.auth.uid)
+        ).data.zone == request.resource.data.zone;
+      allow update: if isShopAdminFor(resource.data.shopId) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status']) &&
+        request.resource.data.status in [
+          'waiting',
+          'serving',
+          'cancelled'
+        ];
+      allow delete: if
+        (
+          signedIn() &&
+          get(
+            /databases/$(database)/documents/payments/$(ticketId)
+          ).data.userId == request.auth.uid &&
+          !existsAfter(
+            /databases/$(database)/documents/queues/$(request.auth.uid)
+          )
+        ) ||
+        isShopAdminFor(resource.data.shopId);
     }
 
     match /queueHistory/{historyId} {

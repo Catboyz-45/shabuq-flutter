@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-const superAdminEmail = 'admin@gmail.com';
-
 class AdminProfile {
   const AdminProfile({
     required this.uid,
@@ -41,15 +39,17 @@ class AdminService {
 
   final FirebaseFirestore _firestore;
 
-  bool isSuperAdmin(User user) =>
-      user.email?.trim().toLowerCase() == superAdminEmail;
+  /// A Super Admin is any account with a superAdmins/{uid} document. That
+  /// collection is read-only for clients and is managed in the Firebase Console.
+  Stream<bool> watchIsSuperAdmin(User user) {
+    return _firestore
+        .collection('superAdmins')
+        .doc(user.uid)
+        .snapshots()
+        .map((snapshot) => snapshot.exists);
+  }
 
-  Stream<bool> watchCurrentUserIsAdmin(User user) async* {
-    if (isSuperAdmin(user)) {
-      yield true;
-      return;
-    }
-
+  Stream<bool> watchIsShopAdmin(User user) async* {
     final reference = _firestore.collection('admins').doc(user.uid);
     final serverSnapshot = await reference.get(
       const GetOptions(source: Source.server),
@@ -145,7 +145,16 @@ class AdminService {
   }) async {
     final queueReference = _firestore.collection('queues').doc(queueId);
     if (status != 'completed') {
-      await queueReference.update({'status': status});
+      final queue = await queueReference.get();
+      final paymentId = queue.data()?['paymentId'];
+      final batch =
+          _firestore.batch()..update(queueReference, {'status': status});
+      if (paymentId is String && paymentId.isNotEmpty) {
+        batch.update(_firestore.collection('queueTickets').doc(paymentId), {
+          'status': status,
+        });
+      }
+      await batch.commit();
       return;
     }
 
@@ -175,6 +184,7 @@ class AdminService {
         'completedBy': currentUser.uid,
       });
       transaction.delete(queueReference);
+      transaction.delete(_firestore.collection('queueTickets').doc(paymentId));
     });
   }
 }

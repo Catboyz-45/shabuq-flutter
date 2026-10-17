@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'pay_screen.dart';
+import '../services/queue_service.dart';
 import '../widgets/shop_image.dart';
 
 class BookingScreen extends StatefulWidget {
@@ -48,16 +49,14 @@ class _BookingScreenState extends State<BookingScreen> {
     }
 
     try {
+      final queueService = QueueService();
       final results = await Future.wait([
-        FirebaseFirestore.instance
-            .collection('queues')
-            .where('shopId', isEqualTo: widget.shopInfo['id'])
-            .get(),
-        FirebaseFirestore.instance.collection('queues').doc(user.uid).get(),
+        queueService.countWaiting(widget.shopInfo['id'] as String),
+        queueService.queueOf(user.uid).get(),
       ]);
       if (!mounted) return;
       setState(() {
-        _queueCount = (results.first as QuerySnapshot).docs.length;
+        _queueCount = results.first as int;
         _hasActiveQueue = (results.last as DocumentSnapshot).exists;
         _loading = false;
         _error = null;

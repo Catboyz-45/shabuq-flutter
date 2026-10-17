@@ -40,7 +40,7 @@ dependencies:
   cloud_firestore: ^5.4.4
 
   # Login UI
-  flutter_login: ^5.0.0
+  flutter_login: ^7.0.0
 
 
 dev_dependencies:
