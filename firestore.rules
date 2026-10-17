@@ -184,6 +184,28 @@ service cloud.firestore {
         !exists(/databases/$(database)/documents/superAdmins/$(adminId));
     }
 
+    // Fields a shop's own admin may change: price, opening hours, pausing
+    // bookings and the call pace used for wait estimates.
+    function validShopAdminSettings() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let data = request.resource.data;
+      return changed.hasOnly([
+          'pricePerPerson',
+          'openingHours',
+          'acceptingQueues',
+          'minutesPerQueue',
+          'lastCalledAt',
+          'updatedAt'
+        ]) &&
+        data.get('openingHours', '') is string &&
+        data.get('openingHours', '').size() <= 40 &&
+        data.get('acceptingQueues', true) is bool &&
+        data.get('minutesPerQueue', 0) is number &&
+        data.get('minutesPerQueue', 0) >= 0 &&
+        data.get('minutesPerQueue', 0) <= 120 &&
+        (!('lastCalledAt' in changed) || data.lastCalledAt == request.time);
+    }
+
     match /shops/{shopId} {
       allow read: if signedIn();
       allow create: if isSuperAdmin() &&
@@ -225,8 +247,7 @@ service cloud.firestore {
         (
           isShopAdminFor(shopId) &&
           !isSuperAdmin() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['pricePerPerson', 'updatedAt'])
+          validShopAdminSettings()
         ) ||
         (
           isSuperAdmin() &&
@@ -310,81 +331,122 @@ service cloud.firestore {
         resource.data.shopId == shopId;
     }
 
-    match /queues/{queueId} {
-      // Queue documents name the customer, so only the customer and the shop's
-      // admins may read them. Positions are calculated from queueTickets.
-      allow read: if isOwner(queueId) || isShopAdminFor(resource.data.shopId);
-      allow create: if isOwner(queueId) &&
-        request.resource.data.keys().hasOnly([
+    function queueAt(queueId) {
+      return /databases/$(database)/documents/queues/$(queueId);
+    }
+
+    function ticketAt(ticketId) {
+      return /databases/$(database)/documents/queueTickets/$(ticketId);
+    }
+
+    // Numbers restart daily per shop and zone. Whoever issues a queue bumps
+    // the counter by exactly one in the same transaction.
+    match /shops/{shopId}/queueCounters/{zoneCode} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() &&
+        zoneCode.matches('^[A-Z]$') &&
+        request.resource.data.keys().hasOnly(['date', 'last']) &&
+        request.resource.data.date is string &&
+        request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        request.resource.data.last == (
+          (resource == null || resource.data.date != request.resource.data.date)
+            ? 1
+            : resource.data.last + 1
+        ) &&
+        (
+          isShopAdminFor(shopId) ||
+          (
+            existsAfter(queueAt(request.auth.uid)) &&
+            getAfter(queueAt(request.auth.uid)).data.shopId == shopId &&
+            getAfter(queueAt(request.auth.uid)).data.zoneCode == zoneCode &&
+            getAfter(queueAt(request.auth.uid)).data.queueNumber ==
+              request.resource.data.last
+          )
+        );
+      allow delete: if false;
+    }
+
+    function validNewQueue(data) {
+      return data.keys().hasOnly([
           'userId',
           'shopId',
           'shopName',
           'zone',
+          'zoneCode',
           'partySize',
-          'payMethod',
-          'paymentId',
+          'ticketId',
+          'queueNumber',
+          'queueLabel',
+          'walkIn',
+          'customerName',
           'status',
           'createdAt'
         ]) &&
-        request.resource.data.userId == request.auth.uid &&
-        validShop(
-          request.resource.data.shopId,
-          request.resource.data.shopName
-        ) &&
-        request.resource.data.shopName is string &&
-        request.resource.data.shopName.size() > 0 &&
-        request.resource.data.shopName.size() <= 120 &&
-        request.resource.data.zone is string &&
-        request.resource.data.zone.size() > 0 &&
-        request.resource.data.zone.size() <= 80 &&
-        request.resource.data.partySize is int &&
-        request.resource.data.partySize >= 1 &&
-        request.resource.data.partySize <= 10 &&
-        request.resource.data.payMethod in ['counter', 'qr'] &&
-        request.resource.data.paymentId is string &&
-        request.resource.data.status == 'waiting' &&
-        request.resource.data.createdAt == request.time &&
-        existsAfter(
-          /databases/$(database)/documents/payments/$(request.resource.data.paymentId)
-        ) &&
+        validShop(data.shopId, data.shopName) &&
+        get(/databases/$(database)/documents/shops/$(data.shopId)).data
+          .get('acceptingQueues', true) == true &&
+        data.zone is string &&
+        data.zone.size() > 0 &&
+        data.zone.size() <= 80 &&
+        data.zoneCode is string &&
+        data.zoneCode.matches('^[A-Z]$') &&
+        data.partySize is int &&
+        data.partySize >= 1 &&
+        data.partySize <= 10 &&
+        data.ticketId is string &&
+        data.ticketId.size() > 0 &&
+        data.queueNumber is int &&
+        data.queueNumber >= 1 &&
+        data.queueLabel is string &&
+        data.queueLabel.size() <= 8 &&
+        data.customerName is string &&
+        data.customerName.size() <= 60 &&
+        data.status == 'waiting' &&
+        data.createdAt == request.time &&
         getAfter(
-          /databases/$(database)/documents/payments/$(request.resource.data.paymentId)
-        ).data.userId == request.auth.uid &&
-        existsAfter(
-          /databases/$(database)/documents/queueTickets/$(request.resource.data.paymentId)
+          /databases/$(database)/documents/shops/$(data.shopId)/queueCounters/$(data.zoneCode)
+        ).data.last == data.queueNumber &&
+        existsAfter(ticketAt(data.ticketId));
+    }
+
+    match /queues/{queueId} {
+      // Customer queues use the customer's uid as id; walk-ins added by staff
+      // use walkin-{ticketId}. Only the customer and the shop's admins may
+      // read them. Positions are calculated from queueTickets.
+      allow read: if isOwner(queueId) || isShopAdminFor(resource.data.shopId);
+      allow create: if validNewQueue(request.resource.data) &&
+        (
+          (
+            isOwner(queueId) &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.walkIn == false
+          ) ||
+          (
+            isShopAdminFor(request.resource.data.shopId) &&
+            queueId == 'walkin-' + request.resource.data.ticketId &&
+            request.resource.data.userId == '' &&
+            request.resource.data.walkIn == true
+          )
         );
       allow update: if isShopAdminFor(resource.data.shopId) &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status']) &&
-        request.resource.data.status in [
-          'waiting',
-          'serving',
-          'cancelled'
-        ];
+          .hasOnly(['status', 'calledAt']) &&
+        request.resource.data.status in ['waiting', 'called', 'serving'] &&
+        request.resource.data.get('calledAt', request.time) is timestamp;
       allow delete: if
-        (
-          signedIn() &&
-          resource.data.userId == request.auth.uid &&
-          queueId == request.auth.uid
-        ) ||
+        isOwner(queueId) ||
         (
           isShopAdminFor(resource.data.shopId) &&
           existsAfter(
-            /databases/$(database)/documents/queueHistory/$(resource.data.paymentId)
+            /databases/$(database)/documents/queueHistory/$(resource.data.ticketId)
           ) &&
           getAfter(
-            /databases/$(database)/documents/queueHistory/$(resource.data.paymentId)
-          ).data.userId == resource.data.userId &&
-          getAfter(
-            /databases/$(database)/documents/queueHistory/$(resource.data.paymentId)
-          ).data.shopId == resource.data.shopId &&
-          getAfter(
-            /databases/$(database)/documents/queueHistory/$(resource.data.paymentId)
-          ).data.status == 'completed'
+            /databases/$(database)/documents/queueHistory/$(resource.data.ticketId)
+          ).data.queueId == queueId
         );
     }
 
-    // Anonymous public mirror of each active queue (id = paymentId). It holds
+    // Anonymous public mirror of each active queue (id = ticketId). It holds
     // no user data, so any signed-in user may read it to count queues ahead.
     match /queueTickets/{ticketId} {
       allow read: if signedIn();
@@ -392,44 +454,44 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly([
           'shopId',
           'zone',
+          'queueLabel',
           'status',
           'createdAt'
         ]) &&
         request.resource.data.status == 'waiting' &&
         request.resource.data.createdAt == request.time &&
-        existsAfter(
-          /databases/$(database)/documents/queues/$(request.auth.uid)
-        ) &&
-        getAfter(
-          /databases/$(database)/documents/queues/$(request.auth.uid)
-        ).data.paymentId == ticketId &&
-        getAfter(
-          /databases/$(database)/documents/queues/$(request.auth.uid)
-        ).data.shopId == request.resource.data.shopId &&
-        getAfter(
-          /databases/$(database)/documents/queues/$(request.auth.uid)
-        ).data.zone == request.resource.data.zone;
+        request.resource.data.queueLabel is string &&
+        request.resource.data.queueLabel.size() <= 8 &&
+        (
+          (
+            existsAfter(queueAt(request.auth.uid)) &&
+            getAfter(queueAt(request.auth.uid)).data.ticketId == ticketId &&
+            getAfter(queueAt(request.auth.uid)).data.shopId ==
+              request.resource.data.shopId &&
+            getAfter(queueAt(request.auth.uid)).data.zone ==
+              request.resource.data.zone
+          ) ||
+          (
+            isShopAdminFor(request.resource.data.shopId) &&
+            existsAfter(queueAt('walkin-' + ticketId))
+          )
+        );
       allow update: if isShopAdminFor(resource.data.shopId) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status']) &&
-        request.resource.data.status in [
-          'waiting',
-          'serving',
-          'cancelled'
-        ];
+        request.resource.data.status in ['waiting', 'called', 'serving'];
       allow delete: if
         (
           signedIn() &&
-          get(
-            /databases/$(database)/documents/payments/$(ticketId)
-          ).data.userId == request.auth.uid &&
-          !existsAfter(
-            /databases/$(database)/documents/queues/$(request.auth.uid)
-          )
+          exists(queueAt(request.auth.uid)) &&
+          get(queueAt(request.auth.uid)).data.ticketId == ticketId &&
+          !existsAfter(queueAt(request.auth.uid))
         ) ||
         isShopAdminFor(resource.data.shopId);
     }
 
+    // Closed queues (id = ticketId), kept for the customer's history and the
+    // shop's statistics.
     match /queueHistory/{historyId} {
       allow read: if
         (signedIn() && resource.data.userId == request.auth.uid) ||
@@ -441,138 +503,30 @@ service cloud.firestore {
           'shopId',
           'shopName',
           'zone',
+          'zoneCode',
           'partySize',
-          'payMethod',
-          'paymentId',
+          'ticketId',
+          'queueNumber',
+          'queueLabel',
+          'walkIn',
+          'customerName',
           'status',
           'createdAt',
+          'calledAt',
+          'queueId',
           'completedAt',
           'completedBy'
         ]) &&
-        historyId == request.resource.data.paymentId &&
-        request.resource.data.status == 'completed' &&
+        historyId == request.resource.data.ticketId &&
+        request.resource.data.status in ['completed', 'no_show', 'cancelled'] &&
         request.resource.data.completedAt == request.time &&
         request.resource.data.completedBy == request.auth.uid &&
-        validShop(
-          request.resource.data.shopId,
-          request.resource.data.shopName
-        ) &&
-        exists(
-          /databases/$(database)/documents/queues/$(request.resource.data.userId)
-        ) &&
-        get(
-          /databases/$(database)/documents/queues/$(request.resource.data.userId)
-        ).data.paymentId == historyId &&
-        get(
-          /databases/$(database)/documents/queues/$(request.resource.data.userId)
-        ).data.shopId == request.resource.data.shopId &&
-        !existsAfter(
-          /databases/$(database)/documents/queues/$(request.resource.data.userId)
-        );
+        exists(queueAt(request.resource.data.queueId)) &&
+        get(queueAt(request.resource.data.queueId)).data.ticketId == historyId &&
+        get(queueAt(request.resource.data.queueId)).data.shopId ==
+          request.resource.data.shopId &&
+        !existsAfter(queueAt(request.resource.data.queueId));
       allow update, delete: if false;
-    }
-
-    match /payments/{paymentId} {
-      allow read: if
-        (signedIn() && resource.data.userId == request.auth.uid) ||
-        isShopAdminFor(resource.data.shopId);
-      allow create: if signedIn() &&
-        request.resource.data.keys().hasOnly([
-          'paymentId',
-          'userId',
-          'shopId',
-          'shopName',
-          'partySize',
-          'pricePerPerson',
-          'total',
-          'coupon',
-          'discount',
-          'netTotal',
-          'payMethod',
-          'couponCode',
-          'createdAt'
-        ]) &&
-        request.resource.data.paymentId == paymentId &&
-        request.resource.data.userId == request.auth.uid &&
-        validShop(
-          request.resource.data.shopId,
-          request.resource.data.shopName
-        ) &&
-        request.resource.data.shopName is string &&
-        request.resource.data.shopName.size() > 0 &&
-        request.resource.data.shopName.size() <= 120 &&
-        request.resource.data.partySize is int &&
-        request.resource.data.partySize >= 1 &&
-        request.resource.data.partySize <= 10 &&
-        request.resource.data.pricePerPerson ==
-          get(
-            /databases/$(database)/documents/shops/$(request.resource.data.shopId)
-          ).data.pricePerPerson &&
-        request.resource.data.total ==
-          request.resource.data.partySize * request.resource.data.pricePerPerson &&
-        request.resource.data.discount is int &&
-        request.resource.data.discount >= 0 &&
-        request.resource.data.discount <= request.resource.data.total &&
-        request.resource.data.couponCode is string &&
-        (
-          (
-            request.resource.data.couponCode == '' &&
-            request.resource.data.coupon == '' &&
-            request.resource.data.discount == 0
-          ) ||
-          (
-            request.resource.data.couponCode != '' &&
-            exists(
-              /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
-            ) &&
-            !existsAfter(
-              /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
-            ) &&
-            request.resource.data.coupon ==
-              get(
-                /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
-              ).data.name &&
-            (
-              (
-                request.resource.data.discount ==
-                  get(
-                    /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
-                  ).data.value &&
-                get(
-                  /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
-                ).data.value <= request.resource.data.total
-              ) ||
-              (
-                request.resource.data.discount == request.resource.data.total &&
-                get(
-                  /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
-                ).data.value >= request.resource.data.total
-              )
-            )
-          )
-        ) &&
-        request.resource.data.netTotal ==
-          request.resource.data.total - request.resource.data.discount &&
-        request.resource.data.payMethod in ['counter', 'qr'] &&
-        request.resource.data.createdAt == request.time &&
-        existsAfter(
-          /databases/$(database)/documents/queues/$(request.auth.uid)
-        ) &&
-        getAfter(
-          /databases/$(database)/documents/queues/$(request.auth.uid)
-        ).data.paymentId == paymentId &&
-        getAfter(
-          /databases/$(database)/documents/queues/$(request.auth.uid)
-        ).data.shopId == request.resource.data.shopId;
-      allow update, delete: if false;
-    }
-
-    match /bookings/{bookingId} {
-      allow read: if signedIn() && resource.data.userId == request.auth.uid;
-      allow create: if signedIn() &&
-        request.resource.data.userId == request.auth.uid;
-      allow update, delete: if signedIn() &&
-        resource.data.userId == request.auth.uid;
     }
 
     match /{document=**} {

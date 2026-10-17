@@ -7,7 +7,7 @@
 //   admin@shabuq.test      Super Admin
 //   teenoi@shabuq.test     shop admin for "teenoi"
 //   customer@shabuq.test   customer without a queue
-//   guest1..3@shabuq.test  customers already waiting at teenoi
+//   guest1..3@shabuq.test  customers already waiting at teenoi (A001–A003)
 
 const projectId = process.env.FIREBASE_PROJECT ?? 'ftf3-f150b';
 const authHost = 'http://127.0.0.1:9099';
@@ -83,6 +83,8 @@ const shops = [
     phone: '02-000-0001',
     zones: ['โซน A', 'โซน B'],
     pricePerPerson: 299,
+    openingHours: '11:00–22:00 ทุกวัน',
+    minutesPerQueue: 6,
   },
   {
     id: 'pho',
@@ -92,6 +94,7 @@ const shops = [
     phone: '02-000-0002',
     zones: ['ในร้าน', 'ริมหน้าต่าง'],
     pricePerPerson: 359,
+    openingHours: '10:00–21:00',
   },
   {
     id: 'wiyaki',
@@ -101,10 +104,18 @@ const shops = [
     phone: '02-000-0003',
     zones: ['ทั่วไป'],
     pricePerPerson: 399,
+    openingHours: '17:00–24:00',
+    acceptingQueues: false,
   },
 ];
 for (const { id, ...shop } of shops) {
-  await setDoc(`shops/${id}`, { ...shop, active: true, createdAt: now, updatedAt: now });
+  await setDoc(`shops/${id}`, {
+    acceptingQueues: true,
+    ...shop,
+    active: true,
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 const menu = [
   ['หมูสไลซ์', 'เนื้อสัตว์'],
@@ -125,8 +136,8 @@ for (const [index, [name, category]] of menu.entries()) {
   });
 }
 
-await setDoc('promoCodes/SHABU50', {
-  code: 'SHABU50',
+await setDoc('promoCodes/shabu50', {
+  code: 'shabu50',
   name: 'ส่วนลด 50 บาท',
   value: 50,
   active: true,
@@ -151,43 +162,76 @@ await setDoc(`admins/${shopAdmin}`, {
 
 await createUser('customer@shabuq.test');
 
+const pad = (number) => String(number).padStart(2, '0');
+const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+// Three customers already waiting in zone A, numbered A001–A003.
 for (let index = 1; index <= 3; index++) {
   const uid = await createUser(`guest${index}@shabuq.test`);
-  const paymentId = `seedpay${index}`;
+  const ticketId = `seedticket${index}`;
   const createdAt = new Date(now.getTime() - (10 - index) * 60_000);
-  const partySize = index + 1;
-  await setDoc(`payments/${paymentId}`, {
-    paymentId,
-    userId: uid,
-    shopId: 'teenoi',
-    shopName: 'Teenoi Shabu',
-    partySize,
-    pricePerPerson: 299,
-    total: partySize * 299,
-    coupon: '',
-    couponCode: '',
-    discount: 0,
-    netTotal: partySize * 299,
-    payMethod: 'counter',
-    createdAt,
-  });
+  const queueLabel = `A${String(index).padStart(3, '0')}`;
   await setDoc(`queues/${uid}`, {
     userId: uid,
     shopId: 'teenoi',
     shopName: 'Teenoi Shabu',
     zone: 'โซน A',
-    partySize,
-    payMethod: 'counter',
-    paymentId,
+    zoneCode: 'A',
+    partySize: index + 1,
+    ticketId,
+    queueNumber: index,
+    queueLabel,
+    walkIn: false,
+    customerName: '',
     status: 'waiting',
     createdAt,
   });
-  await setDoc(`queueTickets/${paymentId}`, {
+  await setDoc(`queueTickets/${ticketId}`, {
     shopId: 'teenoi',
     zone: 'โซน A',
+    queueLabel,
     status: 'waiting',
     createdAt,
   });
+}
+await setDoc('shops/teenoi/queueCounters/A', { date: today, last: 3 });
+
+// A week of closed queues so the shop's statistics have something to show.
+// Deterministic pseudo-random numbers keep re-seeding stable.
+let seed = 7;
+const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const busyHours = [11, 12, 12, 13, 17, 18, 18, 19, 19, 19, 20, 20];
+for (let day = 6; day >= 0; day--) {
+  const count = day === 0 ? 8 : 10 + Math.floor(random() * 8);
+  for (let index = 0; index < count; index++) {
+    const date = new Date(now);
+    date.setDate(now.getDate() - day);
+    date.setHours(busyHours[Math.floor(random() * busyHours.length)], Math.floor(random() * 60), 0, 0);
+    if (date > now) date.setTime(now.getTime() - (index + 1) * 20 * 60_000);
+    const roll = random();
+    const status = roll < 0.8 ? 'completed' : roll < 0.9 ? 'no_show' : 'cancelled';
+    const calledAt = new Date(date.getTime() + (5 + Math.floor(random() * 25)) * 60_000);
+    const id = `seedhistory-${day}-${index}`;
+    await setDoc(`queueHistory/${id}`, {
+      userId: '',
+      shopId: 'teenoi',
+      shopName: 'Teenoi Shabu',
+      zone: 'โซน A',
+      zoneCode: 'A',
+      partySize: 2 + Math.floor(random() * 4),
+      ticketId: id,
+      queueNumber: index + 1,
+      queueLabel: `A${String(index + 1).padStart(3, '0')}`,
+      walkIn: true,
+      customerName: '',
+      status,
+      createdAt: date,
+      ...(status === 'cancelled' ? {} : { calledAt }),
+      queueId: `walkin-${id}`,
+      completedAt: new Date(calledAt.getTime() + 60 * 60_000),
+      completedBy: shopAdmin,
+    });
+  }
 }
 
 console.log('Seeded emulator for project', projectId);

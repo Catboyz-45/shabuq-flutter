@@ -4,6 +4,8 @@ import 'package:flutter_login/flutter_login.dart'; // UI สำหรับห�
 import 'package:firebase_auth/firebase_auth.dart'; // สำหรับจัดการผู้ใช้
 import 'package:cloud_firestore/cloud_firestore.dart'; // สำหรับบันทึกข้อมูลผู้ใช้เพิ่มเติม
 
+import '../utils/auth_messages.dart';
+
 // หน้าจอสำหรับล็อกอินและสมัครสมาชิก
 class AuthScreen extends StatelessWidget {
   const AuthScreen({super.key});
@@ -23,7 +25,7 @@ class AuthScreen extends StatelessWidget {
       }
       return null; // null หมายถึงสำเร็จ
     } on FirebaseAuthException catch (e) {
-      return e.message ?? 'เข้าสู่ระบบไม่สำเร็จ'; // แสดงข้อความ error
+      return authErrorMessage(e.code); // แสดงข้อความ error เป็นภาษาไทย
     }
   }
 
@@ -44,12 +46,21 @@ class AuthScreen extends StatelessWidget {
           }, SetOptions(merge: true));
       return null; // สมัครสำเร็จ
     } on FirebaseAuthException catch (e) {
-      return e.message ?? 'สมัครสมาชิกไม่สำเร็จ';
+      return authErrorMessage(e.code);
     }
   }
 
-  // ฟังก์ชันกู้รหัสผ่าน (ไม่ได้ใช้งานจริงในระบบนี้)
-  Future<String?> _noopRecover(String email) async => null;
+  // ส่งอีเมลสำหรับตั้งรหัสผ่านใหม่
+  Future<String?> _recoverPassword(String email) async {
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email.trim());
+      return null;
+    } on FirebaseAuthException catch (e) {
+      // ไม่บอกว่าอีเมลนี้มีบัญชีหรือไม่ เพื่อไม่ให้ใช้เดารายชื่อผู้ใช้ได้
+      if (e.code == 'user-not-found') return null;
+      return authErrorMessage(e.code);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +68,7 @@ class AuthScreen extends StatelessWidget {
       title: 'ShabuQ', // ชื่อแอปที่แสดงบนหน้าจอ
       onLogin: _login, // ฟังก์ชันล็อกอิน
       onSignup: _signup, // ฟังก์ชันสมัครสมาชิก
-      onRecoverPassword: _noopRecover, // ไม่ใช้ฟังก์ชันกู้รหัสผ่าน
-      hideForgotPasswordButton: true, // ซ่อนปุ่ม "ลืมรหัสผ่าน"
+      onRecoverPassword: _recoverPassword, // ส่งลิงก์ตั้งรหัสผ่านใหม่
       onSubmitAnimationCompleted: () {
         Navigator.of(context).pop(); // กลับไปหน้าหลักหลังล็อกอิน/สมัครเสร็จ
       },
@@ -77,7 +87,17 @@ class AuthScreen extends StatelessWidget {
         confirmPasswordHint: 'ยืนยันรหัสผ่าน',
         loginButton: 'เข้าสู่ระบบ',
         signupButton: 'สมัครสมาชิก',
-        // ไม่ต้องใส่ forgotPasswordButton เพราะเราซ่อนอยู่แล้ว
+        forgotPasswordButton: 'ลืมรหัสผ่าน?',
+        recoverPasswordIntro: 'ตั้งรหัสผ่านใหม่',
+        recoverPasswordDescription:
+            'กรอกอีเมลที่ใช้สมัคร เราจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปให้',
+        recoverPasswordButton: 'ส่งลิงก์',
+        recoverPasswordSuccess: 'ถ้ามีบัญชีนี้ในระบบ ลิงก์จะถูกส่งไปที่อีเมล',
+        goBackButton: 'กลับ',
+        confirmPasswordError: 'รหัสผ่านไม่ตรงกัน',
+        flushbarTitleError: 'เกิดข้อผิดพลาด',
+        flushbarTitleSuccess: 'สำเร็จ',
+        signUpSuccess: 'สมัครสมาชิกเรียบร้อย',
       ),
     );
   }

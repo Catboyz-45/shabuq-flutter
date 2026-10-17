@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/queue_service.dart';
+import '../services/shop_service.dart';
 import '../utils/queue_position.dart';
 
 /// Shows the customer's active queue and history. Everything streams from
@@ -16,38 +17,35 @@ class QueueScreen extends StatefulWidget {
 
 class _QueueScreenState extends State<QueueScreen> {
   final _queueService = QueueService();
+  final _shopService = ShopService();
 
-  Future<void> _cancelQueue(String uid, {bool askFirst = true}) async {
-    if (askFirst) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder:
-            (dialogContext) => AlertDialog(
-              title: const Text('ยืนยันการยกเลิกคิว'),
-              content: const Text('คุณต้องการยกเลิกคิวนี้หรือไม่?'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('ไม่'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('ใช่'),
-                ),
-              ],
-            ),
-      );
-      if (confirm != true || !mounted) return;
-    }
+  Future<void> _cancelQueue(String uid) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('ยืนยันการยกเลิกคิว'),
+            content: const Text('คุณต้องการยกเลิกคิวนี้หรือไม่?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('ไม่'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('ใช่'),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true || !mounted) return;
 
     try {
       await _queueService.cancelMyQueue(uid);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(askFirst ? 'ยกเลิกคิวเรียบร้อย' : 'ลบคิวออกแล้ว'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อย')));
     } on FirebaseException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -90,11 +88,11 @@ class _QueueScreenState extends State<QueueScreen> {
                         ),
                         const SizedBox(height: 8),
                         _ActiveQueueCard(
+                          key: ValueKey(queue['ticketId']),
                           queue: queue,
                           queueService: _queueService,
+                          shopService: _shopService,
                           onCancel: () => _cancelQueue(uid),
-                          onDismissCancelled:
-                              () => _cancelQueue(uid, askFirst: false),
                         ),
                         const SizedBox(height: 24),
                       ],
@@ -110,37 +108,58 @@ class _QueueScreenState extends State<QueueScreen> {
   }
 }
 
-class _ActiveQueueCard extends StatelessWidget {
+class _ActiveQueueCard extends StatefulWidget {
   const _ActiveQueueCard({
+    super.key,
     required this.queue,
     required this.queueService,
+    required this.shopService,
     required this.onCancel,
-    required this.onDismissCancelled,
   });
 
   final Map<String, dynamic> queue;
   final QueueService queueService;
+  final ShopService shopService;
   final VoidCallback onCancel;
-  final VoidCallback onDismissCancelled;
+
+  @override
+  State<_ActiveQueueCard> createState() => _ActiveQueueCardState();
+}
+
+class _ActiveQueueCardState extends State<_ActiveQueueCard> {
+  late final Stream<List<QueueTicket>> _tickets;
+  late final Stream<Map<String, dynamic>?> _shop;
+
+  @override
+  void initState() {
+    super.initState();
+    _tickets = widget.queueService.watchWaitingTickets(
+      shopId: widget.queue['shopId'] as String? ?? '',
+      zone: widget.queue['zone'] as String? ?? '',
+    );
+    _shop = widget.shopService.watchShop(
+      widget.queue['shopId'] as String? ?? '-',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final shopId = queue['shopId'] as String? ?? '';
+    final queue = widget.queue;
     final zone = queue['zone'] as String? ?? '';
-    final paymentId = queue['paymentId'] as String? ?? '';
+    final ticketId = queue['ticketId'] as String? ?? '';
     final status = queue['status'] as String? ?? 'waiting';
     final createdAt = queue['createdAt'];
     final ownCreatedAt =
         createdAt is Timestamp ? createdAt.toDate() : DateTime.now();
 
     return StreamBuilder<List<QueueTicket>>(
-      stream: queueService.watchWaitingTickets(shopId: shopId, zone: zone),
+      stream: _tickets,
       builder: (context, ticketSnapshot) {
         final ahead =
             ticketSnapshot.hasData
                 ? queuesAhead(
                   waitingTickets: ticketSnapshot.data!,
-                  ownTicketId: paymentId,
+                  ownTicketId: ticketId,
                   ownCreatedAt: ownCreatedAt,
                 )
                 : null;
@@ -154,16 +173,36 @@ class _ActiveQueueCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${queue['shopName'] ?? ''} ($zone)',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'คิว ${paymentId.length >= 6 ? paymentId.substring(0, 6).toUpperCase() : '-'}'
-                  ' • ${queue['partySize'] ?? 0} คน',
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            queue['shopName'] as String? ?? '',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          Text('$zone • ${queue['partySize'] ?? 0} คน'),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      children: [
+                        const Text('เลขคิว'),
+                        Text(
+                          queue['queueLabel'] as String? ?? '-',
+                          style: Theme.of(
+                            context,
+                          ).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 if (ticketSnapshot.hasError)
@@ -171,27 +210,31 @@ class _ActiveQueueCard extends StatelessWidget {
                 else if (progress == null)
                   const LinearProgressIndicator()
                 else
-                  _ProgressBanner(progress: progress, ahead: ahead!),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child:
-                      progress == QueueProgress.cancelled
-                          ? FilledButton.tonal(
-                            onPressed: onDismissCancelled,
-                            child: const Text('ลบคิวนี้'),
-                          )
-                          : progress == QueueProgress.serving
-                          ? const SizedBox.shrink()
-                          : TextButton.icon(
-                            onPressed: onCancel,
-                            icon: Icon(Icons.close, color: colors.error),
-                            label: Text(
-                              'ยกเลิกคิว',
-                              style: TextStyle(color: colors.error),
-                            ),
-                          ),
-                ),
+                  StreamBuilder<Map<String, dynamic>?>(
+                    stream: _shop,
+                    builder:
+                        (context, shopSnapshot) => _ProgressBanner(
+                          progress: progress,
+                          ahead: ahead!,
+                          minutesPerQueue:
+                              (shopSnapshot.data?['minutesPerQueue'] as num?)
+                                  ?.toDouble(),
+                        ),
+                  ),
+                if (progress != QueueProgress.serving) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: widget.onCancel,
+                      icon: Icon(Icons.close, color: colors.error),
+                      label: Text(
+                        'ยกเลิกคิว',
+                        style: TextStyle(color: colors.error),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -202,42 +245,51 @@ class _ActiveQueueCard extends StatelessWidget {
 }
 
 class _ProgressBanner extends StatelessWidget {
-  const _ProgressBanner({required this.progress, required this.ahead});
+  const _ProgressBanner({
+    required this.progress,
+    required this.ahead,
+    required this.minutesPerQueue,
+  });
 
   final QueueProgress progress;
   final int ahead;
+  final double? minutesPerQueue;
 
   @override
   Widget build(BuildContext context) {
+    final wait = estimateWaitMinutes(
+      ahead: ahead,
+      minutesPerQueue: minutesPerQueue,
+    );
     final (
       IconData icon,
       Color color,
       String title,
       String detail,
     ) = switch (progress) {
+      QueueProgress.called => (
+        Icons.campaign,
+        Colors.green,
+        'ถึงคิวแล้ว!',
+        'เชิญที่หน้าร้าน แจ้งเลขคิวกับพนักงานได้เลย',
+      ),
       QueueProgress.serving => (
         Icons.restaurant,
-        Colors.green,
-        'ถึงคิวแล้ว',
-        'เชิญที่หน้าร้านได้เลย',
+        Colors.teal,
+        'กำลังใช้บริการ',
+        'ขอให้อร่อยกับมื้อนี้',
       ),
       QueueProgress.next => (
         Icons.hourglass_top,
         Colors.orange,
         'คิวถัดไป',
-        'กรุณาเตรียมตัวใกล้ร้าน',
+        'ประมาณ $wait นาที กรุณาเตรียมตัวใกล้ร้าน',
       ),
       QueueProgress.waiting => (
         Icons.schedule,
         Colors.deepPurple,
         'รออีก $ahead คิว',
-        'ลำดับจะอัปเดตอัตโนมัติ',
-      ),
-      QueueProgress.cancelled => (
-        Icons.cancel,
-        Colors.red,
-        'ร้านยกเลิกคิวนี้',
-        'กรุณาติดต่อร้านหรือจองใหม่',
+        'ประมาณ $wait นาที • อัปเดตอัตโนมัติ',
       ),
     };
     return Container(
@@ -317,14 +369,20 @@ class _QueueHistory extends StatelessWidget {
                 child: ListTile(
                   leading: const CircleAvatar(child: Icon(Icons.history)),
                   title: Text(
-                    '${item['shopName'] ?? ''} (${item['zone'] ?? ''})',
+                    '${item['queueLabel'] ?? ''} ${item['shopName'] ?? ''}',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
-                    'จำนวนที่นั่ง ${item['partySize'] ?? 0}\n'
-                    'เสร็จสิ้น ${_formatDate(_dateOf(item['completedAt']))}',
+                    '${item['zone'] ?? ''} • ${item['partySize'] ?? 0} คน\n'
+                    '${_formatDate(_dateOf(item['completedAt']))}',
                   ),
-                  trailing: const Chip(label: Text('เสร็จสิ้น')),
+                  trailing: Chip(
+                    label: Text(switch (item['status']) {
+                      'no_show' => 'ไม่มาตามคิว',
+                      'cancelled' => 'ร้านยกเลิก',
+                      _ => 'เสร็จสิ้น',
+                    }),
+                  ),
                 ),
               ),
             ),

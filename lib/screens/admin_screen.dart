@@ -6,6 +6,8 @@ import '../services/admin_service.dart';
 import '../services/shop_service.dart';
 import 'promo_code_admin.dart';
 import 'shop_menu_admin.dart';
+import 'shop_queue_admin.dart';
+import 'shop_stats_admin.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key, required this.isSuperAdmin});
@@ -851,13 +853,6 @@ class _ShopAdminView extends StatelessWidget {
   final AdminService adminService;
   final String uid;
 
-  static const statuses = <String, String>{
-    'waiting': 'รอคิว',
-    'serving': 'กำลังให้บริการ',
-    'completed': 'เสร็จสิ้น',
-    'cancelled': 'ยกเลิก',
-  };
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AdminProfile?>(
@@ -886,7 +881,7 @@ class _ShopAdminView extends StatelessWidget {
         }
 
         return DefaultTabController(
-          length: 3,
+          length: 4,
           child: Scaffold(
             appBar: AppBar(
               title: Text(admin.shopName),
@@ -899,15 +894,20 @@ class _ShopAdminView extends StatelessWidget {
               ],
               bottom: const TabBar(
                 tabs: [
-                  Tab(icon: Icon(Icons.queue), text: 'จัดการคิว'),
-                  Tab(icon: Icon(Icons.restaurant_menu), text: 'จัดการเมนู'),
+                  Tab(icon: Icon(Icons.queue), text: 'คิว'),
+                  Tab(icon: Icon(Icons.insights), text: 'สถิติ'),
+                  Tab(icon: Icon(Icons.restaurant_menu), text: 'เมนู'),
                   Tab(icon: Icon(Icons.store), text: 'ข้อมูลร้าน'),
                 ],
               ),
             ),
             body: TabBarView(
               children: [
-                _ShopQueueManagement(adminService: adminService, admin: admin),
+                ShopQueueAdmin(adminService: adminService, admin: admin),
+                ShopStatsAdmin(
+                  adminService: adminService,
+                  shopId: admin.shopId,
+                ),
                 ShopMenuAdmin(admin: admin),
                 _ShopSettings(admin: admin),
               ],
@@ -931,46 +931,57 @@ class _ShopSettings extends StatefulWidget {
 class _ShopSettingsState extends State<_ShopSettings> {
   final ShopService _shopService = ShopService();
   final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _hoursController = TextEditingController();
+  late final Stream<Map<String, dynamic>?> _shop = _shopService.watchShop(
+    widget.admin.shopId,
+  );
+  bool _loaded = false;
   bool _saving = false;
 
   @override
   void dispose() {
     _priceController.dispose();
+    _hoursController.dispose();
     super.dispose();
   }
 
-  Future<void> _savePrice() async {
+  Future<void> _save() async {
     final price = int.tryParse(_priceController.text.trim());
+    final hours = _hoursController.text.trim();
     if (price == null || price < 1 || price > 100000) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณากรอกราคาระหว่าง 1–100,000 บาท')),
-      );
+      _showMessage('กรุณากรอกราคาระหว่าง 1–100,000 บาท');
+      return;
+    }
+    if (hours.length > 40) {
+      _showMessage('เวลาเปิด–ปิดยาวได้ไม่เกิน 40 ตัวอักษร');
       return;
     }
     setState(() => _saving = true);
     try {
-      await _shopService.updatePrice(
+      await _shopService.updateShopSettings(
         shopId: widget.admin.shopId,
         pricePerPerson: price,
+        openingHours: hours,
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('บันทึกราคาแล้ว')));
+      _showMessage('บันทึกข้อมูลร้านแล้ว');
     } on FirebaseException {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกราคาไม่สำเร็จ กรุณาลองใหม่')),
-      );
+      _showMessage('บันทึกไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Map<String, dynamic>?>(
-      stream: _shopService.watchShop(widget.admin.shopId),
+      stream: _shop,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const Center(child: Text('โหลดข้อมูลร้านไม่สำเร็จ'));
@@ -982,9 +993,10 @@ class _ShopSettingsState extends State<_ShopSettings> {
         if (shop == null) {
           return const Center(child: Text('ไม่พบข้อมูลร้าน'));
         }
-        final currentPrice = shop['pricePerPerson'] as int? ?? 0;
-        if (!_saving && _priceController.text.isEmpty) {
-          _priceController.text = currentPrice.toString();
+        if (!_loaded) {
+          _loaded = true;
+          _priceController.text = '${shop['pricePerPerson'] as int? ?? ''}';
+          _hoursController.text = shop['openingHours'] as String? ?? '';
         }
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -993,7 +1005,9 @@ class _ShopSettingsState extends State<_ShopSettings> {
               child: ListTile(
                 leading: const Icon(Icons.storefront),
                 title: Text(shop['name'] as String? ?? widget.admin.shopName),
-                subtitle: Text('ราคาปัจจุบัน ฿$currentPrice/คน'),
+                subtitle: Text(
+                  'ราคาปัจจุบัน ฿${shop['pricePerPerson'] ?? '-'}/คน',
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -1008,8 +1022,19 @@ class _ShopSettingsState extends State<_ShopSettings> {
               ),
             ),
             const SizedBox(height: 16),
+            TextField(
+              controller: _hoursController,
+              enabled: !_saving,
+              maxLength: 40,
+              decoration: const InputDecoration(
+                labelText: 'เวลาเปิด–ปิด',
+                hintText: 'เช่น 11:00–22:00 ทุกวัน',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: _saving ? null : _savePrice,
+              onPressed: _saving ? null : _save,
               icon:
                   _saving
                       ? const SizedBox.square(
@@ -1017,247 +1042,11 @@ class _ShopSettingsState extends State<_ShopSettings> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                       : const Icon(Icons.save),
-              label: const Text('บันทึกราคา'),
+              label: const Text('บันทึก'),
             ),
           ],
         );
       },
-    );
-  }
-}
-
-class _ShopQueueManagement extends StatelessWidget {
-  const _ShopQueueManagement({required this.adminService, required this.admin});
-
-  final AdminService adminService;
-  final AdminProfile admin;
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: adminService.watchShopQueues(admin.shopId),
-      builder: (context, queueSnapshot) {
-        if (queueSnapshot.hasError) {
-          return const Center(child: Text('โหลดข้อมูลคิวของร้านไม่สำเร็จ'));
-        }
-        if (!queueSnapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final queues =
-            queueSnapshot.data!.docs.toList()..sort(
-              (left, right) => _dateOf(
-                left.data()['createdAt'],
-              ).compareTo(_dateOf(right.data()['createdAt'])),
-            );
-
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: adminService.watchShopQueueHistory(admin.shopId),
-          builder: (context, historySnapshot) {
-            if (historySnapshot.hasError) {
-              return const Center(child: Text('โหลดประวัติคิวไม่สำเร็จ'));
-            }
-            if (!historySnapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final histories =
-                historySnapshot.data!.docs.toList()..sort(
-                  (left, right) => _dateOf(
-                    right.data()['completedAt'],
-                  ).compareTo(_dateOf(left.data()['completedAt'])),
-                );
-
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Card(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  child: ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.storefront)),
-                    title: Text(admin.shopName),
-                    subtitle: Text(
-                      '${admin.displayName}\n${admin.email}\nจัดการได้เฉพาะร้านนี้',
-                    ),
-                    isThreeLine: true,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'คิวปัจจุบัน (${queues.length})',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                if (queues.isEmpty)
-                  const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: Text('ไม่มีคิวที่กำลังใช้งาน')),
-                    ),
-                  ),
-                ...queues.map(
-                  (document) => _ActiveQueueCard(
-                    key: ValueKey(document.id),
-                    document: document,
-                    adminService: adminService,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'ประวัติคิว (${histories.length})',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                if (histories.isEmpty)
-                  const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: Text('ยังไม่มีประวัติคิว')),
-                    ),
-                  ),
-                ...histories.map((document) {
-                  final data = document.data();
-                  return Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.history)),
-                      title: Text(
-                        'คิว ${document.id.substring(0, 6).toUpperCase()}',
-                      ),
-                      subtitle: Text(
-                        'โซน: ${data['zone'] ?? '-'} • '
-                        '${data['partySize'] ?? 0} คน\n'
-                        'เสร็จสิ้น ${_formatDate(_dateOf(data['completedAt']))}',
-                      ),
-                      isThreeLine: true,
-                      trailing: const Chip(label: Text('เสร็จสิ้น')),
-                    ),
-                  );
-                }),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  static DateTime _dateOf(Object? value) {
-    return value is Timestamp
-        ? value.toDate()
-        : DateTime.fromMillisecondsSinceEpoch(0);
-  }
-
-  static String _formatDate(DateTime date) {
-    if (date.millisecondsSinceEpoch == 0) return '-';
-    String twoDigits(int value) => value.toString().padLeft(2, '0');
-    return '${twoDigits(date.day)}/${twoDigits(date.month)}/${date.year} '
-        '${twoDigits(date.hour)}:${twoDigits(date.minute)}';
-  }
-}
-
-class _ActiveQueueCard extends StatefulWidget {
-  const _ActiveQueueCard({
-    super.key,
-    required this.document,
-    required this.adminService,
-  });
-
-  final QueryDocumentSnapshot<Map<String, dynamic>> document;
-  final AdminService adminService;
-
-  @override
-  State<_ActiveQueueCard> createState() => _ActiveQueueCardState();
-}
-
-class _ActiveQueueCardState extends State<_ActiveQueueCard> {
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.document.data()['status'] == 'completed') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _saveStatus('completed');
-      });
-    }
-  }
-
-  Future<void> _saveStatus(String status) async {
-    if (_saving || !mounted) return;
-    setState(() => _saving = true);
-    try {
-      await widget.adminService.updateQueueStatus(
-        queueId: widget.document.id,
-        status: status,
-      );
-    } on FirebaseException {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่')),
-      );
-      setState(() => _saving = false);
-    } on StateError catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
-      setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final data = widget.document.data();
-    final status = data['status'] as String? ?? 'waiting';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'คิว ${widget.document.id.substring(0, 6).toUpperCase()}',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            Text('โซน: ${data['zone'] ?? '-'}'),
-            Text('จำนวน: ${data['partySize'] ?? 0} คน'),
-            Text('วิธีชำระ: ${data['payMethod'] ?? '-'}'),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue:
-                  _ShopAdminView.statuses.containsKey(status)
-                      ? status
-                      : 'waiting',
-              decoration: InputDecoration(
-                labelText: 'สถานะคิว',
-                border: const OutlineInputBorder(),
-                suffixIcon:
-                    _saving
-                        ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                        : null,
-              ),
-              items:
-                  _ShopAdminView.statuses.entries
-                      .map(
-                        (entry) => DropdownMenuItem(
-                          value: entry.key,
-                          child: Text(entry.value),
-                        ),
-                      )
-                      .toList(),
-              onChanged:
-                  _saving
-                      ? null
-                      : (newStatus) async {
-                        if (newStatus == null || newStatus == status) return;
-                        await _saveStatus(newStatus);
-                      },
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

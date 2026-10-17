@@ -60,12 +60,25 @@ class ShopService {
     });
   }
 
-  Future<void> updatePrice({
+  /// Settings a shop's own admin may change.
+  Future<void> updateShopSettings({
     required String shopId,
     required int pricePerPerson,
+    required String openingHours,
   }) {
     return _firestore.collection('shops').doc(shopId).update({
       'pricePerPerson': pricePerPerson,
+      'openingHours': openingHours.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> setAcceptingQueues({
+    required String shopId,
+    required bool accepting,
+  }) {
+    return _firestore.collection('shops').doc(shopId).update({
+      'acceptingQueues': accepting,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

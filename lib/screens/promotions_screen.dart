@@ -127,8 +127,31 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
     _codeController.clear();
   }
 
-  // ใช้คูปองและลบออกจากรายการ
+  // ใช้คูปองที่หน้าร้าน: ให้พนักงานดูก่อนกดยืนยัน แล้วลบออกจากรายการ
   Future<void> _useCoupon(String id) async {
+    final coupon = _userCoupons.firstWhere((c) => c['id'] == id);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: Text('ใช้คูปอง ${coupon['name']}'),
+            content: Text(
+              'แสดงหน้านี้ให้พนักงานตอนชำระเงิน แล้วกด "ใช้คูปอง" '
+              'ต่อหน้าพนักงาน\nส่วนลด ฿${coupon['value']} ใช้ได้ครั้งเดียว',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('ยกเลิก'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('ใช้คูปอง'),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true) return;
     if (_uid != null) {
       try {
         await FirebaseFirestore.instance

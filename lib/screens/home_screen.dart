@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/shop_service.dart';
 import '../widgets/shop_image.dart';
-import 'booking_screen.dart';
+import 'shop_screen.dart';
 
 // รายการรูปภาพโปรโมชั่นที่ใช้ใน banner
 final bannerImages = [
@@ -155,12 +155,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       tile: _Tile(
                         shop['name'] as String? ?? '',
                         shop['image'] as String? ?? '',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => BookingScreen(shopInfo: shop),
-                          ),
-                        ),
+                        () async {
+                          final tabs = DefaultTabController.maybeOf(context);
+                          final booked = await Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ShopScreen(shopInfo: shop),
+                            ),
+                          );
+                          // แท็บที่ 2 คือ "คิวของฉัน"
+                          if (booked == true) tabs?.animateTo(1);
+                        },
                       ),
                     );
                   },
