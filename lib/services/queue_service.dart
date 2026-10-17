@@ -31,11 +31,13 @@ class QueueService {
   Stream<List<QueueTicket>> watchWaitingTickets({
     required String shopId,
     required String zone,
+    required String queueDate,
   }) {
     return _firestore
         .collection('queueTickets')
         .where('shopId', isEqualTo: shopId)
         .where('zone', isEqualTo: zone)
+        .where('queueDate', isEqualTo: queueDate)
         .where('status', isEqualTo: 'waiting')
         .snapshots(includeMetadataChanges: true)
         .where((snapshot) => !snapshot.metadata.isFromCache)
@@ -54,10 +56,13 @@ class QueueService {
         );
   }
 
+  /// Today's waiting queues at a shop; unclosed queues from earlier days
+  /// are not counted.
   Stream<int> watchWaitingCount(String shopId) {
     return _firestore
         .collection('queueTickets')
         .where('shopId', isEqualTo: shopId)
+        .where('queueDate', isEqualTo: queueDateKey(DateTime.now()))
         .where('status', isEqualTo: 'waiting')
         .snapshots()
         .map((snapshot) => snapshot.size);
@@ -166,6 +171,7 @@ class QueueService {
       'ticketId': ticket.id,
       'queueNumber': number,
       'queueLabel': label,
+      'queueDate': today,
       'walkIn': userId.isEmpty,
       'customerName': customerName,
       'status': 'waiting',
@@ -175,6 +181,7 @@ class QueueService {
       'shopId': shopId,
       'zone': zone,
       'queueLabel': label,
+      'queueDate': today,
       'status': 'waiting',
       'createdAt': createdAt,
     });

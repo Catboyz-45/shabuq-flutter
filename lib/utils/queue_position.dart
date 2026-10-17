@@ -60,10 +60,23 @@ String zoneCodeFor(List<String> zones, String zone) {
 String formatQueueLabel(String zoneCode, int number) =>
     '$zoneCode${number.toString().padLeft(3, '0')}';
 
-/// Queue numbers restart at 1 every day (in the device's local time).
-String queueDateKey(DateTime time) =>
-    '${time.year}-${time.month.toString().padLeft(2, '0')}-'
-    '${time.day.toString().padLeft(2, '0')}';
+/// Thailand has no daylight saving time, so Bangkok is always UTC+7.
+const bangkokOffset = Duration(hours: 7);
+
+/// The business day a queue belongs to, in Bangkok time whatever the
+/// device's time zone. Numbers restart at 1 each day and queues from earlier
+/// days no longer count towards anyone's position. firestore.rules computes
+/// the same key from the server clock.
+String queueDateKey(DateTime time) {
+  final bangkok = time.toUtc().add(bangkokOffset);
+  return '${bangkok.year}-${bangkok.month.toString().padLeft(2, '0')}-'
+      '${bangkok.day.toString().padLeft(2, '0')}';
+}
+
+/// True for a queue issued on an earlier day (or before queue dates
+/// existed) that the shop never closed.
+bool isStaleQueue(String? queueDate, {required String today}) =>
+    queueDate != today;
 
 int nextQueueNumber({
   required String? counterDate,

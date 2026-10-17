@@ -177,6 +177,7 @@ class AdminService {
             .collection('queues')
             .where('shopId', isEqualTo: shopId)
             .where('zone', isEqualTo: zone)
+            .where('queueDate', isEqualTo: queueDateKey(DateTime.now()))
             .where('status', isEqualTo: 'waiting')
             .get();
     if (waiting.docs.isEmpty) return null;
@@ -250,6 +251,25 @@ class AdminService {
       transaction.delete(queueReference);
       transaction.delete(_firestore.collection('queueTickets').doc(ticketId));
     });
+  }
+
+  /// Closes several queues one by one (each in its own transaction) and
+  /// returns how many were closed. Used for leftovers from earlier days and
+  /// at closing time.
+  Future<int> closeQueues({
+    required Iterable<String> queueIds,
+    required String outcome,
+  }) async {
+    var closed = 0;
+    for (final queueId in queueIds) {
+      try {
+        await closeQueue(queueId: queueId, outcome: outcome);
+        closed++;
+      } on StateError {
+        // Already closed, or cancelled by the customer meanwhile.
+      }
+    }
+    return closed;
   }
 
   static DateTime _timeOf(Object? value) =>

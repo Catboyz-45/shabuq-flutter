@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/admin_service.dart';
 import '../services/queue_service.dart';
 import '../services/shop_service.dart';
 import '../utils/queue_position.dart';
+import 'redeem_coupon_dialog.dart';
 
 /// Live queue board for one shop: call the next queue per zone, add walk-ins,
 /// pause new bookings, and close queues as completed, no-show or cancelled.
@@ -61,6 +63,57 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
       _showMessage('เรียกคิวไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       if (mounted) setState(() => _callingZone = null);
+    }
+  }
+
+  bool _closing = false;
+
+  Future<void> _redeemCoupon() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final redeemed = await showDialog<bool>(
+      context: context,
+      builder: (_) => RedeemCouponDialog(staffUid: uid, shopId: _shopId),
+    );
+    if (redeemed == true) _showMessage('ใช้คูปองเรียบร้อย');
+  }
+
+  /// Closes [queueIds] as cancelled after confirming; customers see them in
+  /// their history as cancelled by the shop.
+  Future<void> _closeAll(List<String> queueIds, {required String title}) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: Text(title),
+            content: Text(
+              'ปิด ${queueIds.length} คิวเป็น "ร้านยกเลิก" '
+              'ลูกค้าจะเห็นในประวัติของตัวเอง',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('ยกเลิก'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('ปิดคิว'),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _closing = true);
+    try {
+      final closed = await widget.adminService.closeQueues(
+        queueIds: queueIds,
+        outcome: 'cancelled',
+      );
+      _showMessage('ปิดแล้ว $closed คิว');
+    } on FirebaseException {
+      _showMessage('ปิดคิวไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      if (mounted) setState(() => _closing = false);
     }
   }
 
@@ -123,7 +176,16 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                 <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{
                   for (final zone in zones) zone: [],
                 };
+            final today = queueDateKey(DateTime.now());
+            final stale = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
             for (final document in queueSnapshot.data!.docs) {
+              if (isStaleQueue(
+                document.data()['queueDate'] as String?,
+                today: today,
+              )) {
+                stale.add(document);
+                continue;
+              }
               final zone = document.data()['zone'] as String? ?? zones.first;
               byZone.putIfAbsent(zone, () => []).add(document);
             }
@@ -156,11 +218,50 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _addWalkIn(zones),
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('เพิ่มคิว walk-in'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _addWalkIn(zones),
+                        icon: const Icon(Icons.person_add),
+                        label: const Text('เพิ่มคิว walk-in'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _redeemCoupon,
+                        icon: const Icon(Icons.local_offer),
+                        label: const Text('ใช้คูปองลูกค้า'),
+                      ),
+                    ),
+                  ],
                 ),
+                if (stale.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Card(
+                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    child: ListTile(
+                      leading: const Icon(Icons.history_toggle_off),
+                      title: Text('คิวค้างจากวันก่อน ${stale.length} คิว'),
+                      subtitle: Text(
+                        stale
+                            .map((doc) => doc.data()['queueLabel'] ?? '-')
+                            .join(', '),
+                      ),
+                      trailing: FilledButton.tonal(
+                        onPressed:
+                            _closing
+                                ? null
+                                : () => _closeAll(
+                                  stale.map((doc) => doc.id).toList(),
+                                  title: 'ปิดคิวค้างจากวันก่อน',
+                                ),
+                        child: const Text('ปิดทั้งหมด'),
+                      ),
+                    ),
+                  ),
+                ],
                 for (final entry in byZone.entries) ...[
                   const SizedBox(height: 20),
                   _ZoneHeader(
@@ -187,6 +288,18 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                       adminService: widget.adminService,
                     ),
                 ],
+                const SizedBox(height: 24),
+                OutlinedButton.icon(
+                  onPressed:
+                      _closing || byZone.values.every((list) => list.isEmpty)
+                          ? null
+                          : () => _closeAll([
+                            for (final list in byZone.values)
+                              for (final doc in list) doc.id,
+                          ], title: 'ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
+                  icon: const Icon(Icons.nightlight_round),
+                  label: const Text('ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
+                ),
               ],
             );
           },

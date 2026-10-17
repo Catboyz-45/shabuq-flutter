@@ -6,6 +6,7 @@
       "fields": [
         { "fieldPath": "shopId", "order": "ASCENDING" },
         { "fieldPath": "zone", "order": "ASCENDING" },
+        { "fieldPath": "queueDate", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
     },
@@ -15,6 +16,7 @@
       "fields": [
         { "fieldPath": "shopId", "order": "ASCENDING" },
         { "fieldPath": "zone", "order": "ASCENDING" },
+        { "fieldPath": "queueDate", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
     }

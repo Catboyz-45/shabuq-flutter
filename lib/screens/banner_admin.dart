@@ -147,7 +147,9 @@ class _BannerAdminScreenState extends State<BannerAdminScreen> {
                       ? const Center(child: CircularProgressIndicator())
                       : banners.isEmpty
                       ? const Center(
-                        child: Text('ยังไม่มีแบนเนอร์ หน้าแรกจะไม่แสดงแบนเนอร์'),
+                        child: Text(
+                          'ยังไม่มีแบนเนอร์ หน้าแรกจะไม่แสดงแบนเนอร์',
+                        ),
                       )
                       : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
@@ -311,7 +313,10 @@ class _BannerDialogState extends State<_BannerDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem(value: '', child: Text('ไม่ลิงก์ไปร้าน')),
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('ไม่ลิงก์ไปร้าน'),
+                  ),
                   for (final shop in widget.shops)
                     DropdownMenuItem(
                       value: shop['id'] as String,

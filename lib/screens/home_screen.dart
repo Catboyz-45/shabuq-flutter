@@ -19,9 +19,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final ShopService _shopService = ShopService();
   // แบนเนอร์มาจาก Firestore แอดมินเพิ่ม/แก้ได้จากหน้า Super Admin
-  late final Stream<List<PromoBanner>> _banners = BannerService().watchBanners();
-  late final Stream<List<Map<String, dynamic>>> _shops = _shopService
-      .watchShops();
+  late final Stream<List<PromoBanner>> _banners =
+      BannerService().watchBanners();
+  late final Stream<List<Map<String, dynamic>>> _shops =
+      _shopService.watchShops();
   final PageController _bannerController =
       PageController(); // ควบคุมการเลื่อน banner
   int _bannerIndex = 0; // ตำแหน่งปัจจุบันของ banner

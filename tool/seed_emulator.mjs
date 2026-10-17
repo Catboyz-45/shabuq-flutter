@@ -184,8 +184,10 @@ await setDoc(`admins/${shopAdmin}`, {
 
 await createUser('customer@shabuq.test');
 
-const pad = (number) => String(number).padStart(2, '0');
-const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+// Queue days are Bangkok calendar days (UTC+7), like queueDateKey() in Dart.
+const bangkokDate = (date) =>
+  new Date(date.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+const today = bangkokDate(now);
 
 // Three customers already waiting in zone A, numbered A001–A003.
 for (let index = 1; index <= 3; index++) {
@@ -203,6 +205,7 @@ for (let index = 1; index <= 3; index++) {
     ticketId,
     queueNumber: index,
     queueLabel,
+    queueDate: today,
     walkIn: false,
     customerName: '',
     status: 'waiting',
@@ -212,6 +215,38 @@ for (let index = 1; index <= 3; index++) {
     shopId: 'teenoi',
     zone: 'โซน A',
     queueLabel,
+    queueDate: today,
+    status: 'waiting',
+    createdAt,
+  });
+}
+
+// A queue from yesterday that the shop forgot to close. It must not count
+// towards today's positions; the shop board offers to close it.
+{
+  const createdAt = new Date(now.getTime() - 26 * 3600_000);
+  const queueDate = bangkokDate(createdAt);
+  await setDoc('queues/walkin-seedstale', {
+    userId: '',
+    shopId: 'teenoi',
+    shopName: 'Teenoi Shabu',
+    zone: 'โซน A',
+    zoneCode: 'A',
+    partySize: 2,
+    ticketId: 'seedstale',
+    queueNumber: 27,
+    queueLabel: 'A027',
+    queueDate,
+    walkIn: true,
+    customerName: 'ลูกค้าเมื่อวาน',
+    status: 'waiting',
+    createdAt,
+  });
+  await setDoc('queueTickets/seedstale', {
+    shopId: 'teenoi',
+    zone: 'โซน A',
+    queueLabel: 'A027',
+    queueDate,
     status: 'waiting',
     createdAt,
   });
@@ -244,6 +279,7 @@ for (let day = 6; day >= 0; day--) {
       ticketId: id,
       queueNumber: index + 1,
       queueLabel: `A${String(index + 1).padStart(3, '0')}`,
+      queueDate: bangkokDate(date),
       walkIn: true,
       customerName: '',
       status,

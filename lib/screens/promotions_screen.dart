@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../services/coupon_service.dart';
+
 // หน้าจอสำหรับจัดการโปรโมชั่นและคูปองของผู้ใช้
 class PromotionsScreen extends StatefulWidget {
   const PromotionsScreen({super.key});
@@ -127,47 +129,24 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
     _codeController.clear();
   }
 
-  // ใช้คูปองที่หน้าร้าน: ให้พนักงานดูก่อนกดยืนยัน แล้วลบออกจากรายการ
+  // ใช้คูปองที่หน้าร้าน: แสดงรหัสให้พนักงานกรอก พนักงานเป็นคนยืนยันการใช้
   Future<void> _useCoupon(String id) async {
+    final uid = _uid;
+    if (uid == null) return;
     final coupon = _userCoupons.firstWhere((c) => c['id'] == id);
-    final confirm = await showDialog<bool>(
+    final redeemed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder:
-          (dialogContext) => AlertDialog(
-            title: Text('ใช้คูปอง ${coupon['name']}'),
-            content: Text(
-              'แสดงหน้านี้ให้พนักงานตอนชำระเงิน แล้วกด "ใช้คูปอง" '
-              'ต่อหน้าพนักงาน\nส่วนลด ฿${coupon['value']} ใช้ได้ครั้งเดียว',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('ยกเลิก'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('ใช้คูปอง'),
-              ),
-            ],
+          (_) => _RedemptionDialog(
+            uid: uid,
+            couponCode: id,
+            couponName: coupon['name'] as String? ?? '',
+            value: coupon['value'] as int? ?? 0,
           ),
     );
-    if (confirm != true) return;
-    if (_uid != null) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(_uid)
-            .collection('coupons')
-            .doc(id)
-            .delete();
-        if (!mounted) return;
-        setState(() {
-          _userCoupons.removeWhere((coupon) => coupon['id'] == id);
-        });
-      } on FirebaseException {
-        if (!mounted) return;
-        setState(() => _error = 'ใช้คูปองไม่สำเร็จ กรุณาลองใหม่');
-      }
+    if (redeemed == true && mounted) {
+      setState(() => _userCoupons.removeWhere((c) => c['id'] == id));
     }
   }
 
@@ -277,7 +256,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                                 Icons.check_circle,
                                 color: Colors.deepPurple,
                               ),
-                              tooltip: 'ใช้คูปองนี้',
+                              tooltip: 'ใช้คูปองที่หน้าร้าน',
                               onPressed: () => _useCoupon(c['id']),
                             ),
                           ],
@@ -287,6 +266,112 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                   ),
                 ],
               ),
+    );
+  }
+}
+
+/// Shows a short code for the cashier and waits until shop staff redeem it.
+class _RedemptionDialog extends StatefulWidget {
+  const _RedemptionDialog({
+    required this.uid,
+    required this.couponCode,
+    required this.couponName,
+    required this.value,
+  });
+
+  final String uid;
+  final String couponCode;
+  final String couponName;
+  final int value;
+
+  @override
+  State<_RedemptionDialog> createState() => _RedemptionDialogState();
+}
+
+class _RedemptionDialogState extends State<_RedemptionDialog> {
+  final _couponService = CouponService();
+  String? _code;
+  Stream<CouponRedemption?>? _redemption;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _couponService
+        .requestRedemption(uid: widget.uid, couponCode: widget.couponCode)
+        .then((code) {
+          if (!mounted) return;
+          setState(() {
+            _code = code;
+            _redemption = _couponService.watchRedemption(code);
+          });
+        })
+        .catchError((Object error) {
+          if (!mounted) return;
+          setState(
+            () =>
+                _error =
+                    error is StateError ? error.message : 'สร้างรหัสไม่สำเร็จ',
+          );
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final code = _code;
+    return StreamBuilder<CouponRedemption?>(
+      stream: _redemption,
+      builder: (context, snapshot) {
+        final done = snapshot.data?.isRedeemed == true;
+        final Widget content;
+        if (_error != null) {
+          content = Text(_error!);
+        } else if (code == null) {
+          content = const SizedBox(
+            height: 120,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        } else if (done) {
+          content = const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 64),
+              SizedBox(height: 8),
+              Text('พนักงานยืนยันการใช้คูปองแล้ว'),
+            ],
+          );
+        } else {
+          content = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('แสดงรหัสนี้ให้พนักงานตอนชำระเงิน (ลด ฿${widget.value})'),
+              const SizedBox(height: 16),
+              SelectableText(
+                code,
+                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'รหัสใช้ได้ ${redemptionValidity.inMinutes} นาที',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          );
+        }
+        return AlertDialog(
+          title: Text('ใช้คูปอง ${widget.couponName}'),
+          content: content,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, done),
+              child: Text(done ? 'เสร็จ' : 'ปิด'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

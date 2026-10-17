@@ -80,8 +80,21 @@ void main() {
       expect(formatQueueLabel('B', 123), 'B123');
     });
 
+    test('uses the Bangkok calendar day whatever the device time zone', () {
+      // 16:59 UTC is 23:59 in Bangkok, 17:00 UTC is already the next day.
+      expect(queueDateKey(DateTime.utc(2026, 3, 5, 16, 59)), '2026-03-05');
+      expect(queueDateKey(DateTime.utc(2026, 3, 5, 17, 0)), '2026-03-06');
+      expect(queueDateKey(DateTime.utc(2026, 12, 31, 18)), '2027-01-01');
+    });
+
+    test('treats queues from other days as stale', () {
+      expect(isStaleQueue('2026-03-05', today: '2026-03-05'), isFalse);
+      expect(isStaleQueue('2026-03-04', today: '2026-03-05'), isTrue);
+      expect(isStaleQueue(null, today: '2026-03-05'), isTrue);
+    });
+
     test('restarts at 1 on a new day', () {
-      final today = queueDateKey(DateTime(2026, 3, 5, 23, 59));
+      final today = queueDateKey(DateTime.utc(2026, 3, 5, 10));
       expect(today, '2026-03-05');
       expect(
         nextQueueNumber(counterDate: today, counterLast: 41, today: today),

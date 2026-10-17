@@ -136,6 +136,7 @@ class _ActiveQueueCardState extends State<_ActiveQueueCard> {
     _tickets = widget.queueService.watchWaitingTickets(
       shopId: widget.queue['shopId'] as String? ?? '',
       zone: widget.queue['zone'] as String? ?? '',
+      queueDate: widget.queue['queueDate'] as String? ?? '',
     );
     _shop = widget.shopService.watchShop(
       widget.queue['shopId'] as String? ?? '-',
@@ -205,7 +206,12 @@ class _ActiveQueueCardState extends State<_ActiveQueueCard> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (ticketSnapshot.hasError)
+                if (isStaleQueue(
+                  queue['queueDate'] as String?,
+                  today: queueDateKey(DateTime.now()),
+                ))
+                  const _StaleBanner()
+                else if (ticketSnapshot.hasError)
                   const Text('โหลดลำดับคิวไม่สำเร็จ')
                 else if (progress == null)
                   const LinearProgressIndicator()
@@ -240,6 +246,25 @@ class _ActiveQueueCardState extends State<_ActiveQueueCard> {
           ),
         );
       },
+    );
+  }
+}
+
+class _StaleBanner extends StatelessWidget {
+  const _StaleBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Text(
+        'คิวนี้เป็นของวันก่อนและหมดอายุแล้ว กรุณายกเลิกแล้วรับคิวใหม่',
+      ),
     );
   }
 }

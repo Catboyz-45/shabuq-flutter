@@ -58,6 +58,7 @@ class _QueueAlertsState extends State<QueueAlerts> {
             .watchWaitingTickets(
               shopId: queue['shopId'] as String? ?? '',
               zone: queue['zone'] as String? ?? '',
+              queueDate: queue['queueDate'] as String? ?? '',
             )
             .listen(_onTickets);
       }
@@ -74,7 +75,13 @@ class _QueueAlertsState extends State<QueueAlerts> {
   void _onTickets(List<QueueTicket> tickets) {
     final queue = _queue;
     final ticketId = _watchedTicketId;
-    if (queue == null || ticketId == null || queue['status'] != 'waiting') {
+    if (queue == null ||
+        ticketId == null ||
+        queue['status'] != 'waiting' ||
+        isStaleQueue(
+          queue['queueDate'] as String?,
+          today: queueDateKey(DateTime.now()),
+        )) {
       return;
     }
     final createdAt = queue['createdAt'];

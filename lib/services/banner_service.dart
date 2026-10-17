@@ -74,10 +74,7 @@ class BannerService {
       'updatedAt': FieldValue.serverTimestamp(),
     };
     if (id == null) {
-      return _banners.add({
-        ...data,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      return _banners.add({...data, 'createdAt': FieldValue.serverTimestamp()});
     }
     return _banners.doc(id).update(data);
   }

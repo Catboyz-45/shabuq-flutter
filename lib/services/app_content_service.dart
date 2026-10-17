@@ -43,16 +43,13 @@ class AppContentService {
   Stream<String> watch(AppContentPage page) {
     return _doc(page).snapshots().map((snapshot) {
       final body = snapshot.data()?['body'];
-      return body is String && body.trim().isNotEmpty
-          ? body
-          : page.defaultBody;
+      return body is String && body.trim().isNotEmpty ? body : page.defaultBody;
     });
   }
 
   Future<void> save(AppContentPage page, String body) {
-    return _doc(page).set({
-      'body': body.trim(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    return _doc(
+      page,
+    ).set({'body': body.trim(), 'updatedAt': FieldValue.serverTimestamp()});
   }
 }

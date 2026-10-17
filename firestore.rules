@@ -33,6 +33,13 @@ service cloud.firestore {
       ).data.shopId;
     }
 
+    // An active shop admin (not the Super Admin, who runs no counter).
+    function isShopStaff() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
+    }
+
     function isShopAdminFor(shopId) {
       return isSuperAdmin() ||
         (isAdmin() && adminShopId() == shopId);
@@ -64,7 +71,23 @@ service cloud.firestore {
       allow create, update, delete: if isOwner(userId);
 
       match /coupons/{couponId} {
-        allow read, delete: if isOwner(userId);
+        allow read: if isOwner(userId);
+        // The customer may discard their own coupon; shop staff remove it
+        // when they redeem it at the counter (see couponRedemptions).
+        allow delete: if isOwner(userId) ||
+          (
+            isShopStaff() &&
+            resource.data.get('redemptionCode', '') != '' &&
+            getAfter(
+              /databases/$(database)/documents/couponRedemptions/$(resource.data.redemptionCode)
+            ).data.status == 'redeemed' &&
+            getAfter(
+              /databases/$(database)/documents/couponRedemptions/$(resource.data.redemptionCode)
+            ).data.userId == userId &&
+            getAfter(
+              /databases/$(database)/documents/couponRedemptions/$(resource.data.redemptionCode)
+            ).data.couponCode == couponId
+          );
         allow create: if isOwner(userId) &&
           couponId == request.resource.data.code &&
           request.resource.data.keys().hasOnly(['code', 'name', 'value']) &&
@@ -85,7 +108,13 @@ service cloud.firestore {
           existsAfter(
             /databases/$(database)/documents/users/$(userId)/used_codes/$(couponId)
           );
-        allow update: if false;
+        // Showing a coupon at the counter links it to a fresh redemption code.
+        allow update: if isOwner(userId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['redemptionCode']) &&
+          getAfter(
+            /databases/$(database)/documents/couponRedemptions/$(request.resource.data.redemptionCode)
+          ).data.userId == userId;
       }
 
       match /used_codes/{code} {
@@ -361,6 +390,15 @@ service cloud.firestore {
         resource.data.shopId == shopId;
     }
 
+    // Today's business day in Bangkok (UTC+7, no daylight saving) from the
+    // server clock, formatted like queueDateKey() in queue_position.dart.
+    function bangkokDate() {
+      let t = request.time + duration.value(7, 'h');
+      return string(t.year()) + '-' +
+        (t.month() < 10 ? '0' : '') + string(t.month()) + '-' +
+        (t.day() < 10 ? '0' : '') + string(t.day());
+    }
+
     function queueAt(queueId) {
       return /databases/$(database)/documents/queues/$(queueId);
     }
@@ -376,8 +414,7 @@ service cloud.firestore {
       allow create, update: if signedIn() &&
         zoneCode.matches('^[A-Z]$') &&
         request.resource.data.keys().hasOnly(['date', 'last']) &&
-        request.resource.data.date is string &&
-        request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        request.resource.data.date == bangkokDate() &&
         request.resource.data.last == (
           (resource == null || resource.data.date != request.resource.data.date)
             ? 1
@@ -407,11 +444,13 @@ service cloud.firestore {
           'ticketId',
           'queueNumber',
           'queueLabel',
+          'queueDate',
           'walkIn',
           'customerName',
           'status',
           'createdAt'
         ]) &&
+        data.queueDate == bangkokDate() &&
         validShop(data.shopId, data.shopName) &&
         get(/databases/$(database)/documents/shops/$(data.shopId)).data
           .get('acceptingQueues', true) == true &&
@@ -485,9 +524,11 @@ service cloud.firestore {
           'shopId',
           'zone',
           'queueLabel',
+          'queueDate',
           'status',
           'createdAt'
         ]) &&
+        request.resource.data.queueDate == bangkokDate() &&
         request.resource.data.status == 'waiting' &&
         request.resource.data.createdAt == request.time &&
         request.resource.data.queueLabel is string &&
@@ -499,7 +540,9 @@ service cloud.firestore {
             getAfter(queueAt(request.auth.uid)).data.shopId ==
               request.resource.data.shopId &&
             getAfter(queueAt(request.auth.uid)).data.zone ==
-              request.resource.data.zone
+              request.resource.data.zone &&
+            getAfter(queueAt(request.auth.uid)).data.queueDate ==
+              request.resource.data.queueDate
           ) ||
           (
             isShopAdminFor(request.resource.data.shopId) &&
@@ -538,6 +581,7 @@ service cloud.firestore {
           'ticketId',
           'queueNumber',
           'queueLabel',
+          'queueDate',
           'walkIn',
           'customerName',
           'status',
@@ -557,6 +601,55 @@ service cloud.firestore {
           request.resource.data.shopId &&
         !existsAfter(queueAt(request.resource.data.queueId));
       allow update, delete: if false;
+    }
+
+    // A customer shows a 6-character code at the counter; shop staff type it
+    // in to redeem the coupon. Codes expire after 10 minutes and can only be
+    // fetched by id, so they cannot be listed or guessed in bulk.
+    match /couponRedemptions/{code} {
+      allow get: if signedIn() &&
+        (resource == null || resource.data.userId == request.auth.uid || isShopStaff());
+      allow list, delete: if false;
+      allow create: if signedIn() &&
+        code.matches('^[A-HJ-NP-Z2-9]{6}$') &&
+        request.resource.data.keys().hasOnly([
+          'userId',
+          'couponCode',
+          'couponName',
+          'value',
+          'status',
+          'createdAt'
+        ]) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.couponName ==
+          get(
+            /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
+          ).data.name &&
+        request.resource.data.value ==
+          get(
+            /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
+          ).data.value &&
+        getAfter(
+          /databases/$(database)/documents/users/$(request.auth.uid)/coupons/$(request.resource.data.couponCode)
+        ).data.redemptionCode == code;
+      allow update: if isShopStaff() &&
+        resource.data.status == 'pending' &&
+        request.time < resource.data.createdAt + duration.value(10, 'm') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'redeemedAt',
+          'redeemedBy',
+          'shopId'
+        ]) &&
+        request.resource.data.status == 'redeemed' &&
+        request.resource.data.redeemedAt == request.time &&
+        request.resource.data.redeemedBy == request.auth.uid &&
+        request.resource.data.shopId == adminShopId() &&
+        !existsAfter(
+          /databases/$(database)/documents/users/$(resource.data.userId)/coupons/$(resource.data.couponCode)
+        );
     }
 
     // Home screen banners, managed by Super Admins.
