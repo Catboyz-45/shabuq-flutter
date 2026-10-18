@@ -39,8 +39,6 @@ dependencies:
   firebase_auth: ^5.1.4
   cloud_firestore: ^5.4.4
 
-  # Anuphan for text, Chakra Petch for queue numbers
-  google_fonts: ^6.3.3
   url_launcher: ^6.3.3
   package_info_plus: ^10.2.2
   shared_preferences: ^2.5.6
@@ -92,6 +90,27 @@ flutter:
 
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
+
+  # Bundled so text looks the same offline (SIL Open Font License, see
+  # assets/fonts/OFL-*.txt).
+  fonts:
+    - family: Anuphan
+      fonts:
+        - asset: assets/fonts/Anuphan-Regular.ttf
+        - asset: assets/fonts/Anuphan-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Anuphan-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Anuphan-Bold.ttf
+          weight: 700
+    - family: ChakraPetch
+      fonts:
+        - asset: assets/fonts/ChakraPetch-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ChakraPetch-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/ChakraPetch-Bold.ttf
+          weight: 700
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a

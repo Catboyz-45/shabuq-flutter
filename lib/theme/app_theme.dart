@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// ShabuQ's colours: chilli red and egg-yolk yellow, like a paper queue
 /// ticket, on warm off-white (customers) or near-black (shop staff).
@@ -35,13 +34,10 @@ abstract final class Palette {
 const brandColor = Palette.chili;
 
 /// Anuphan for all text and Chakra Petch for queue numbers, codes and
-/// timers. Fonts load from Google Fonts at runtime; tests switch this off so
-/// they never touch the network.
+/// timers. Both are bundled in assets/fonts, so they work offline.
 abstract final class AppFonts {
-  static bool enabled = true;
-
-  static TextTheme textTheme(TextTheme base) =>
-      enabled ? GoogleFonts.anuphanTextTheme(base) : base;
+  static const body = 'Anuphan';
+  static const display = 'ChakraPetch';
 
   /// The squared "queue display" face for numbers.
   static TextStyle numbers({
@@ -51,14 +47,14 @@ abstract final class AppFonts {
     double? height,
     double? letterSpacing,
   }) {
-    final style = TextStyle(
+    return TextStyle(
+      fontFamily: display,
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
       height: height,
       letterSpacing: letterSpacing,
     );
-    return enabled ? GoogleFonts.chakraPetch(textStyle: style) : style;
   }
 }
 
@@ -142,8 +138,12 @@ class AppTheme {
   static ThemeData _build(Brightness brightness) {
     final isLight = brightness == Brightness.light;
     final scheme = isLight ? _lightScheme : _darkScheme;
-    final base = ThemeData(useMaterial3: true, colorScheme: scheme);
-    final text = AppFonts.textTheme(base.textTheme);
+    final base = ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      fontFamily: AppFonts.body,
+    );
+    final text = base.textTheme;
     final cardColor = isLight ? Colors.white : Palette.nightPanel;
     final fieldColor = isLight ? Colors.white : Palette.nightCard;
     final label = text.labelLarge!.copyWith(
