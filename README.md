@@ -1,8 +1,63 @@
-# ShabuQ
+<p align="center">
+  <img src="assets/icon/icon.JPG" alt="ShabuQ" width="96">
+</p>
 
-แอปพลิเคชันจองคิวร้านชาบู พัฒนาด้วย Flutter และ Firebase เพื่อฝึกสร้างแอปแบบข้ามแพลตฟอร์มที่มีระบบสมาชิก การจัดการข้อมูลแบบ Cloud และขั้นตอนการจองคิวตั้งแต่ต้นจนจบ
+<h1 align="center">ShabuQ</h1>
+
+<p align="center">
+  แอปรับคิวร้านชาบูแบบ real-time ทั้งฝั่งลูกค้าและพนักงานร้าน<br>
+  Flutter · Firebase Auth · Cloud Firestore · Security Rules
+</p>
+
+<p align="center">
+  <a href="https://github.com/Catboyz-45/shabuq-flutter/actions/workflows/ci.yml"><img src="https://github.com/Catboyz-45/shabuq-flutter/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Flutter-3.47-02569B?logo=flutter&logoColor=white" alt="Flutter 3.47">
+  <img src="https://img.shields.io/badge/Firebase-Auth%20%7C%20Firestore-FFCA28?logo=firebase&logoColor=black" alt="Firebase">
+  <img src="https://img.shields.io/badge/tests-76%20%2B%2040%20rules-2ea44f" alt="76 tests + 40 rules cases">
+</p>
+
+<p align="center">
+  <a href="https://ftf3-f150b.web.app"><b>▶ ลองใช้บนเว็บ</b></a> ·
+  <a href="#บัญชีทดลอง">บัญชีทดลอง</a> ·
+  <a href="#ความสามารถหลัก">ความสามารถ</a> ·
+  <a href="#การติดตั้งและรัน">วิธีรัน</a>
+</p>
 
 > โปรเจกต์นี้เป็นผลงานระหว่างเรียน รายวิชา 02739342 Application Development for Mobile Devices
+
+## ภาพหน้าจอ
+
+**ฝั่งลูกค้า**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/02-home.png" width="200"><br>หน้าแรก: ร้านที่รอน้อยขึ้นก่อน</td>
+    <td align="center"><img src="docs/screenshots/03-shop.png" width="200"><br>หน้าร้าน: เลือกโซนและจำนวนคน</td>
+    <td align="center"><img src="docs/screenshots/04-queue.png" width="200"><br>ตั๋วคิวที่อัปเดตสด</td>
+    <td align="center"><img src="docs/screenshots/05-coupons.png" width="200"><br>คูปองส่วนลด</td>
+  </tr>
+</table>
+
+**ฝั่งพนักงานร้าน (แท็บเล็ต)**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/06-staff-board.png" width="420"><br>กระดานคิว: รอคิว / เรียกแล้ว / กำลังทาน</td>
+    <td align="center"><img src="docs/screenshots/07-staff-stats.png" width="420"><br>สถิติร้าน 7 หรือ 30 วัน</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/08-super-admin.png" width="420"><br>Super Admin: ร้าน โค้ดส่วนลด แอดมิน</td>
+    <td align="center"><img src="docs/screenshots/01-login.png" width="200"><br>หน้าเข้าสู่ระบบ</td>
+  </tr>
+</table>
+
+## จุดเด่นทางเทคนิค
+
+- **คิวแบบ real-time:** ลูกค้ารับคิวแล้วกระดานพนักงานขึ้นทันที พนักงานกดเรียกแล้วหน้าลูกค้าเปลี่ยนทันที ใช้ snapshot ของ Firestore ไม่ต้องรีเฟรช
+- **เลขคิวไม่ชนกัน:** ออกเลขคิวแยกตามโซนและวันใน Firestore transaction (`A001`, `B001`, …) แม้หลายคนกดพร้อมกัน
+- **สิทธิ์แยก 3 ระดับ:** ลูกค้า / แอดมินร้าน / Super Admin บังคับด้วย Security Rules ฝั่งเซิร์ฟเวอร์ ทั้งสิทธิ์และรูปแบบข้อมูล มีเทสต์ 40 กรณีบน Emulator
+- **ออกแบบให้ใช้ง่ายตอนร้านวุ่น:** ปุ่ม walk-in แตะเดียว เลิกทำได้ 5 วินาที เสียงเตือนคิวใหม่ จอไม่ดับเอง และข้อมูลที่มีรูปแบบตายตัวเป็นตัวเลือกทั้งหมดเพื่อลดการพิมพ์ผิด
+- **CI ทุก PR:** `flutter analyze`, 76 tests (unit, service, widget) และเทสต์ Security Rules บน GitHub Actions
 
 ## เกี่ยวกับโปรเจกต์
 
@@ -12,7 +67,7 @@ ShabuQ ช่วยให้ลูกค้ารับคิวร้านช�
 
 ## บัญชีทดลอง
 
-ใช้ลองแอปที่ต่อกับ Firebase จริงได้ทันที ข้อมูลทั้งหมดในระบบเป็นข้อมูลสมมุติสำหรับสาธิต
+ใช้ล็อกอินที่ [ftf3-f150b.web.app](https://ftf3-f150b.web.app) หรือแอปที่ต่อกับ Firebase จริงได้ทันที ข้อมูลทั้งหมดในระบบเป็นข้อมูลสมมุติสำหรับสาธิต
 
 | โรล | อีเมล | รหัสผ่าน | เข้าแล้วเห็นอะไร |
 |---|---|---|---|
@@ -218,6 +273,15 @@ flutter run -d chrome --dart-define=USE_FIREBASE_EMULATOR=true
 ```
 
 ข้อมูลตัวอย่างมีลูกค้า 3 คนรอคิวอยู่ที่ร้าน Teenoi และประวัติคิวย้อนหลัง 7 วันให้หน้าสถิติมีข้อมูลแสดง
+
+### เอาขึ้นเว็บ (Firebase Hosting)
+
+```bash
+flutter build web --release
+firebase deploy --only hosting --project ftf3-f150b
+```
+
+เว็บจะอยู่ที่ https://ftf3-f150b.web.app และใช้ Firebase ตัวจริง (`firebase.json` ชี้ `build/web` และส่งทุก path ไปที่ `index.html`)
 
 ### ข้อมูลที่แอดมินแก้ได้
 

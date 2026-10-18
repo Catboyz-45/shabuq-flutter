@@ -1045,6 +1045,9 @@ class _QueueCardState extends State<_QueueCard> {
                             onPressed: late ? () => _close('no_show') : null,
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size.fromHeight(48),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
                               foregroundColor: scheme.error,
                               side: BorderSide(
                                 color:
@@ -1052,10 +1055,15 @@ class _QueueCardState extends State<_QueueCard> {
                                 width: 1.5,
                               ),
                             ),
-                            child: Text(
-                              late
-                                  ? 'ไม่มา ข้ามคิว'
-                                  : 'ข้ามได้ใน ${left.inMinutes + 1} นาที',
+                            // One line on narrow cards: shrink, don't wrap.
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                late
+                                    ? 'ไม่มา ข้ามคิว'
+                                    : 'ข้ามได้ใน ${left.inMinutes + 1} นาที',
+                                maxLines: 1,
+                              ),
                             ),
                           ),
                         ),
