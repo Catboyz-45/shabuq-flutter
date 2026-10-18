@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/promo_code_service.dart';
+import '../theme/app_theme.dart';
+import '../utils/input_formatters.dart';
 
 class PromoCodeAdmin extends StatelessWidget {
   PromoCodeAdmin({super.key});
@@ -61,7 +63,7 @@ class PromoCodeAdmin extends StatelessWidget {
                 child: const Text('ยกเลิก'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                style: destructiveButtonStyle(context),
                 onPressed: () => Navigator.pop(context, true),
                 child: const Text('ลบ'),
               ),
@@ -211,16 +213,27 @@ class _PromoCodeDialogState extends State<_PromoCodeDialog> {
             TextField(
               controller: _codeController,
               enabled: widget.initial == null,
-              decoration: const InputDecoration(labelText: 'โค้ด'),
+              maxLength: 30,
+              inputFormatters: [promoCodeCharacters],
+              decoration: const InputDecoration(
+                labelText: 'โค้ด',
+                helperText: 'อังกฤษตัวเล็ก ตัวเลข - หรือ _ อย่างน้อย 3 ตัว',
+              ),
             ),
             TextField(
               controller: _nameController,
+              maxLength: 80,
               decoration: const InputDecoration(labelText: 'ชื่อส่วนลด'),
             ),
             TextField(
               controller: _valueController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'จำนวนเงินส่วนลด'),
+              maxLength: 6,
+              inputFormatters: [digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'จำนวนเงินส่วนลด',
+                prefixText: '฿ ',
+              ),
             ),
             if (widget.initial != null)
               SwitchListTile(
@@ -230,7 +243,10 @@ class _PromoCodeDialogState extends State<_PromoCodeDialog> {
                 onChanged: (value) => setState(() => _active = value),
               ),
             if (_error != null)
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
           ],
         ),
       ),

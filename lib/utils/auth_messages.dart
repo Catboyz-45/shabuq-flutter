@@ -1,0 +1,47 @@
+/// Thai messages for FirebaseAuthException codes shown on the sign-in screen.
+String authErrorMessage(String code) {
+  switch (code) {
+    case 'invalid-email':
+      return 'รูปแบบอีเมลไม่ถูกต้อง';
+    case 'user-disabled':
+      return 'บัญชีนี้ถูกระงับการใช้งาน';
+    case 'user-not-found':
+    case 'wrong-password':
+    case 'invalid-credential':
+    case 'INVALID_LOGIN_CREDENTIALS':
+      return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+    case 'email-already-in-use':
+      return 'อีเมลนี้สมัครสมาชิกแล้ว ลองเข้าสู่ระบบแทน';
+    case 'weak-password':
+      return 'รหัสผ่านสั้นเกินไป ต้องมีอย่างน้อย 6 ตัวอักษร';
+    case 'too-many-requests':
+      return 'ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่';
+    case 'network-request-failed':
+      return 'เชื่อมต่ออินเทอร์เน็ตไม่ได้ กรุณาตรวจสอบสัญญาณ';
+    case 'operation-not-allowed':
+      return 'ระบบยังไม่เปิดให้เข้าสู่ระบบด้วยอีเมล';
+    default:
+      return 'เกิดข้อผิดพลาด กรุณาลองใหม่';
+  }
+}
+
+/// Message for a failed Google sign-in, or null when the customer just
+/// closed the Google window, which needs no message.
+String? googleSignInErrorMessage(String code) {
+  switch (code) {
+    case 'popup-closed-by-user':
+    case 'cancelled-popup-request':
+    case 'web-context-canceled':
+    case 'web-context-cancelled':
+    case 'canceled':
+      return null;
+    case 'operation-not-allowed':
+      return 'ระบบยังไม่เปิดให้เข้าสู่ระบบด้วย Google';
+    case 'popup-blocked':
+      return 'เบราว์เซอร์บล็อกหน้าต่างเข้าสู่ระบบ อนุญาตป๊อปอัปแล้วลองใหม่';
+    case 'account-exists-with-different-credential':
+      return 'อีเมลนี้สมัครด้วยรหัสผ่านไว้แล้ว เข้าสู่ระบบด้วยอีเมลและรหัสผ่านแทน';
+    default:
+      return authErrorMessage(code);
+  }
+}

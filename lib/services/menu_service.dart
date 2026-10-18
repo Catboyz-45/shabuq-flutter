@@ -6,12 +6,20 @@ class MenuItem {
     required this.name,
     required this.category,
     required this.active,
+    this.description = '',
+    this.imageUrl = '',
+    this.price = 0,
   });
 
   final String id;
   final String name;
   final String category;
   final bool active;
+  final String description;
+  final String imageUrl;
+
+  /// Extra charge in baht; 0 means included in the buffet price.
+  final int price;
 
   factory MenuItem.fromDocument(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
@@ -22,6 +30,9 @@ class MenuItem {
       name: data['name'] as String? ?? '',
       category: data['category'] as String? ?? '',
       active: data['active'] as bool? ?? true,
+      description: data['description'] as String? ?? '',
+      imageUrl: data['imageUrl'] as String? ?? '',
+      price: data['price'] as int? ?? 0,
     );
   }
 }
@@ -56,6 +67,9 @@ class MenuService {
     required String name,
     required String category,
     required bool active,
+    String description = '',
+    String imageUrl = '',
+    int price = 0,
   }) {
     return _items(shopId).add({
       'shopId': shopId,
@@ -63,6 +77,9 @@ class MenuService {
       'name': name.trim(),
       'category': category.trim(),
       'active': active,
+      'description': description.trim(),
+      'imageUrl': imageUrl.trim(),
+      'price': price,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -74,11 +91,17 @@ class MenuService {
     required String name,
     required String category,
     required bool active,
+    String description = '',
+    String imageUrl = '',
+    int price = 0,
   }) {
     return _items(shopId).doc(item.id).update({
       'name': name.trim(),
       'category': category.trim(),
       'active': active,
+      'description': description.trim(),
+      'imageUrl': imageUrl.trim(),
+      'price': price,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

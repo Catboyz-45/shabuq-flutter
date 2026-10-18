@@ -63,6 +63,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '61865429157',
     projectId: 'ftf3-f150b',
     storageBucket: 'ftf3-f150b.firebasestorage.app',
+    iosClientId:
+        '61865429157-4df49rjn59nbq5ps4vtmtlfjmh9o7q9q.apps.googleusercontent.com',
     iosBundleId: 'com.catboyz45.shabuq',
   );
 
@@ -72,6 +74,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '61865429157',
     projectId: 'ftf3-f150b',
     storageBucket: 'ftf3-f150b.firebasestorage.app',
+    iosClientId:
+        '61865429157-4df49rjn59nbq5ps4vtmtlfjmh9o7q9q.apps.googleusercontent.com',
     iosBundleId: 'com.catboyz45.shabuq',
   );
 

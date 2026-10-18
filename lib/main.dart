@@ -1,14 +1,19 @@
 import 'dart:async';
 
 // Import packages ที่จำเป็นสำหรับการทำงานของแอป
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart'; // สำหรับ UI
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart'; // สำหรับเริ่มต้น Firebase
 import 'package:firebase_auth/firebase_auth.dart'; // สำหรับการจัดการผู้ใช้ (Authentication)
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shabuq_flutter/screens/main_screen.dart'; // หน้าหลักของแอป
 import 'firebase_options.dart'; // การตั้งค่า Firebase สำหรับแพลตฟอร์มต่าง ๆ
 import 'screens/admin_screen.dart';
 import 'screens/auth_screen.dart'; // หน้าล็อกอิน/สมัครสมาชิก
 import 'services/admin_service.dart';
+import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 
 // ฟังก์ชัน main เป็นจุดเริ่มต้นของแอป
 Future<void> main() async {
@@ -18,31 +23,50 @@ Future<void> main() async {
         DefaultFirebaseOptions
             .currentPlatform, // เริ่มต้น Firebase ด้วย config ที่เหมาะกับแพลตฟอร์ม
   );
-  runApp(const MyApp()); // เรียกใช้งานแอปหลัก
+  // รันด้วย --dart-define=USE_FIREBASE_EMULATOR=true เพื่อทดสอบกับ Firebase Emulator
+  if (const bool.fromEnvironment('USE_FIREBASE_EMULATOR')) {
+    // The Android emulator reaches the computer at 10.0.2.2, not localhost.
+    final host =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+            ? '10.0.2.2'
+            : 'localhost';
+    await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+    FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+  }
+  final themeController = await ThemeController.load();
+  runApp(MyApp(themeController: themeController)); // เรียกใช้งานแอปหลัก
 }
 
 // คลาสหลักของแอป
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.themeController});
+
+  final ThemeController themeController;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false, // ซ่อนแถบ debug ด้านขวาบน
-      title: 'ShabuQ', // ชื่อแอป
-      theme: ThemeData(
-        useMaterial3: true, // ใช้ Material Design 3
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4F46E5), // สีหลักของธีม
-          brightness: Brightness.light, // โหมดสว่าง
-        ),
-        brightness: Brightness.light, // กำหนดให้ธีมเป็นโหมดสว่าง
+    return ThemeScope(
+      controller: themeController,
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          themeController,
+          themeController.staffMode,
+        ]),
+        builder:
+            (context, _) => MaterialApp(
+              debugShowCheckedModeBanner: false, // ซ่อนแถบ debug ด้านขวาบน
+              title: 'ShabuQ', // ชื่อแอป
+              // สีทั้งหมดของแอปมาจาก AppTheme รองรับทั้งโหมดสว่างและโหมดมืด
+              theme: AppTheme.light(),
+              darkTheme: AppTheme.dark(),
+              themeMode: themeController.effectiveMode,
+              // ปุ่มและข้อความของ dialog ในตัว Flutter เป็นภาษาไทย
+              locale: const Locale('th'),
+              supportedLocales: const [Locale('th'), Locale('en')],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              home: const _AuthGate(),
+            ),
       ),
-      home: const _AuthGate(),
-      routes: {
-        // สามารถเพิ่มเส้นทางไปยังหน้าต่าง ๆ ได้ที่นี่
-        // '/admin_manage': (context) => const AdminManageScreen(),
-      },
     );
   }
 }
@@ -56,52 +80,23 @@ class _AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<_AuthGate> {
   StreamSubscription<User?>? _subscription;
-  Timer? _transitionTimer;
   User? _user;
   bool _initialized = false;
-  bool _readyForAuthenticatedScreen = false;
 
   @override
   void initState() {
     super.initState();
-    _subscription = FirebaseAuth.instance.authStateChanges().listen(
-      _handleAuthChange,
-    );
-  }
-
-  void _handleAuthChange(User? user) {
-    _transitionTimer?.cancel();
-    if (!mounted) return;
-
-    if (user == null) {
+    _subscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted) return;
       setState(() {
-        _user = null;
+        _user = user;
         _initialized = true;
-        _readyForAuthenticatedScreen = false;
       });
-      return;
-    }
-
-    final wasSignedOut = _user == null && _initialized;
-    setState(() {
-      _user = user;
-      _initialized = true;
-      _readyForAuthenticatedScreen = !wasSignedOut;
     });
-
-    if (wasSignedOut) {
-      // flutter_login finishes its submit animation after the callback returns.
-      // Keeping AuthScreen mounted briefly prevents an unmounted-State race.
-      _transitionTimer = Timer(const Duration(milliseconds: 700), () {
-        if (!mounted || _user == null) return;
-        setState(() => _readyForAuthenticatedScreen = true);
-      });
-    }
   }
 
   @override
   void dispose() {
-    _transitionTimer?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
@@ -112,9 +107,7 @@ class _AuthGateState extends State<_AuthGate> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final user = _user;
-    if (user == null || !_readyForAuthenticatedScreen) {
-      return const AuthScreen();
-    }
+    if (user == null) return const AuthScreen();
     return _RoleRouter(user: user);
   }
 }
@@ -127,14 +120,34 @@ class _RoleRouter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final adminService = AdminService();
+    return _RoleStream(
+      stream: adminService.watchIsSuperAdmin(user),
+      builder: (isSuperAdmin) {
+        if (isSuperAdmin) return const AdminScreen(isSuperAdmin: true);
+        return _RoleStream(
+          stream: adminService.watchIsShopAdmin(user),
+          builder:
+              (isShopAdmin) =>
+                  isShopAdmin
+                      ? const AdminScreen(isSuperAdmin: false)
+                      : const MainTabs(),
+        );
+      },
+    );
+  }
+}
+
+class _RoleStream extends StatelessWidget {
+  const _RoleStream({required this.stream, required this.builder});
+
+  final Stream<bool> stream;
+  final Widget Function(bool hasRole) builder;
+
+  @override
+  Widget build(BuildContext context) {
     return StreamBuilder<bool>(
-      stream: adminService.watchCurrentUserIsAdmin(user),
+      stream: stream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
         if (snapshot.hasError) {
           return Scaffold(
             body: Center(
@@ -152,10 +165,12 @@ class _RoleRouter extends StatelessWidget {
             ),
           );
         }
-        if (snapshot.data == true) {
-          return AdminScreen(isSuperAdmin: adminService.isSuperAdmin(user));
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
-        return const MainTabs();
+        return builder(snapshot.data!);
       },
     );
   }

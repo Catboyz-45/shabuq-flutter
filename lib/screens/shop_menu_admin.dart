@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../services/admin_service.dart';
 import '../services/menu_service.dart';
+import '../utils/image_source.dart';
+import '../utils/input_formatters.dart';
+import '../widgets/image_url_field.dart';
+import '../widgets/shop_image.dart';
+import '../theme/app_theme.dart';
 
 class ShopMenuAdmin extends StatefulWidget {
   const ShopMenuAdmin({super.key, required this.admin});
@@ -15,6 +20,9 @@ class ShopMenuAdmin extends StatefulWidget {
 
 class _ShopMenuAdminState extends State<ShopMenuAdmin> {
   final MenuService _menuService = MenuService();
+
+  /// Categories already used by this shop's menu, offered as choices.
+  List<String> _categories = const [];
 
   void _showMessage(String message, {bool error = false}) {
     if (!mounted) return;
@@ -34,6 +42,25 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
     final categoryController = TextEditingController(
       text: item?.category ?? initialCategory,
     );
+    final descriptionController = TextEditingController(
+      text: item?.description ?? '',
+    );
+    final imageController = TextEditingController(text: item?.imageUrl ?? '');
+    final priceController = TextEditingController(
+      text: (item?.price ?? 0) == 0 ? '' : '${item!.price}',
+    );
+    void disposeControllers() {
+      for (final controller in [
+        nameController,
+        categoryController,
+        descriptionController,
+        imageController,
+        priceController,
+      ]) {
+        controller.dispose();
+      }
+    }
+
     var active = item?.active ?? true;
     String? validationError;
 
@@ -57,13 +84,38 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextField(
+                        _CategoryPicker(
                           controller: categoryController,
-                          maxLength: 80,
+                          existing: _categories,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: descriptionController,
+                          maxLength: 200,
+                          maxLines: 2,
                           decoration: const InputDecoration(
-                            labelText: 'หมวดหมู่',
+                            labelText: 'คำอธิบาย (ไม่บังคับ)',
                             border: OutlineInputBorder(),
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: priceController,
+                          keyboardType: TextInputType.number,
+                          maxLength: 6,
+                          inputFormatters: [digitsOnly],
+                          decoration: const InputDecoration(
+                            labelText: 'ราคาเพิ่ม (บาท)',
+                            helperText: 'เว้นว่างถ้ารวมอยู่ในบุฟเฟ่ต์แล้ว',
+                            prefixText: '฿ ',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ImageUrlField(
+                          controller: imageController,
+                          label: 'ลิงก์รูปเมนู (ไม่บังคับ)',
+                          previewHeight: 100,
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
@@ -99,6 +151,25 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                           );
                           return;
                         }
+                        final priceText = priceController.text.trim();
+                        final price =
+                            priceText.isEmpty ? 0 : int.tryParse(priceText);
+                        if (price == null || price < 0 || price > 100000) {
+                          setDialogState(
+                            () =>
+                                validationError =
+                                    'ราคาต้องเป็นตัวเลข 0–100,000 บาท',
+                          );
+                          return;
+                        }
+                        if (!isAllowedImageSource(imageController.text)) {
+                          setDialogState(
+                            () =>
+                                validationError =
+                                    'ลิงก์รูปต้องขึ้นต้นด้วย https://',
+                          );
+                          return;
+                        }
                         Navigator.pop(context, true);
                       },
                       child: const Text('บันทึก'),
@@ -109,10 +180,10 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
     );
 
     if (confirmed != true) {
-      nameController.dispose();
-      categoryController.dispose();
+      disposeControllers();
       return;
     }
+    final price = int.tryParse(priceController.text.trim()) ?? 0;
 
     try {
       if (item == null) {
@@ -122,6 +193,9 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
           name: nameController.text,
           category: categoryController.text,
           active: active,
+          description: descriptionController.text,
+          imageUrl: imageController.text,
+          price: price,
         );
         _showMessage('เพิ่มเมนูแล้ว');
       } else {
@@ -131,14 +205,16 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
           name: nameController.text,
           category: categoryController.text,
           active: active,
+          description: descriptionController.text,
+          imageUrl: imageController.text,
+          price: price,
         );
         _showMessage('แก้ไขเมนูแล้ว');
       }
     } on FirebaseException {
       _showMessage('บันทึกเมนูไม่สำเร็จ กรุณาลองใหม่', error: true);
     } finally {
-      nameController.dispose();
-      categoryController.dispose();
+      disposeControllers();
     }
   }
 
@@ -155,7 +231,7 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                 child: const Text('ยกเลิก'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                style: destructiveButtonStyle(context),
                 onPressed: () => Navigator.pop(context, true),
                 child: const Text('ลบ'),
               ),
@@ -195,6 +271,7 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
           for (final item in items) {
             grouped.putIfAbsent(item.category, () => []).add(item);
           }
+          _categories = grouped.keys.toList();
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
             children:
@@ -228,16 +305,24 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                                     left: 24,
                                     right: 8,
                                   ),
-                                  leading: CircleAvatar(
-                                    child: Icon(
-                                      item.active
-                                          ? Icons.restaurant_menu
-                                          : Icons.visibility_off,
+                                  leading: Opacity(
+                                    opacity: item.active ? 1 : 0.4,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: ShopImage(
+                                        source: item.imageUrl,
+                                        width: 48,
+                                        height: 48,
+                                        placeholderIcon: Icons.restaurant_menu,
+                                      ),
                                     ),
                                   ),
                                   title: Text(item.name),
                                   subtitle: Text(
-                                    item.active ? 'แสดงอยู่' : 'ซ่อนอยู่',
+                                    [
+                                      item.active ? 'แสดงอยู่' : 'ซ่อนอยู่',
+                                      if (item.price > 0) '+฿${item.price}',
+                                    ].join(' • '),
                                   ),
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (action) {
@@ -272,6 +357,81 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
         onPressed: () => _openEditor(),
         icon: const Icon(Icons.add),
         label: const Text('เพิ่มเมนู'),
+      ),
+    );
+  }
+}
+
+/// Pick one of the shop's existing menu categories, or type a new one, so
+/// the same category isn't saved under slightly different spellings.
+class _CategoryPicker extends StatefulWidget {
+  const _CategoryPicker({required this.controller, required this.existing});
+
+  final TextEditingController controller;
+  final List<String> existing;
+
+  @override
+  State<_CategoryPicker> createState() => _CategoryPickerState();
+}
+
+class _CategoryPickerState extends State<_CategoryPicker> {
+  late bool _new =
+      widget.existing.isEmpty ||
+      (widget.controller.text.trim().isNotEmpty &&
+          !widget.existing.contains(widget.controller.text.trim()));
+
+  @override
+  Widget build(BuildContext context) {
+    final current = widget.controller.text.trim();
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'หมวดหมู่',
+        border: OutlineInputBorder(),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.existing.isNotEmpty)
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final category in widget.existing)
+                  ChoiceChip(
+                    label: Text(category),
+                    selected: !_new && current == category,
+                    onSelected:
+                        (_) => setState(() {
+                          _new = false;
+                          widget.controller.text = category;
+                        }),
+                  ),
+                ChoiceChip(
+                  avatar: const Icon(Icons.add, size: 18),
+                  label: const Text('หมวดใหม่'),
+                  selected: _new,
+                  onSelected:
+                      (_) => setState(() {
+                        _new = true;
+                        widget.controller.clear();
+                      }),
+                ),
+              ],
+            ),
+          if (_new) ...[
+            if (widget.existing.isNotEmpty) const SizedBox(height: 10),
+            TextField(
+              controller: widget.controller,
+              maxLength: 80,
+              autofocus: widget.existing.isNotEmpty,
+              decoration: const InputDecoration(
+                labelText: 'ชื่อหมวดใหม่',
+                hintText: 'เช่น เนื้อสัตว์, ผัก, ของหวาน',
+                isDense: true,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
