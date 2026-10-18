@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/admin_service.dart';
 import '../services/menu_service.dart';
 import '../utils/image_source.dart';
+import '../utils/input_formatters.dart';
 import '../widgets/image_url_field.dart';
 import '../widgets/shop_image.dart';
 import '../theme/app_theme.dart';
@@ -19,6 +20,9 @@ class ShopMenuAdmin extends StatefulWidget {
 
 class _ShopMenuAdminState extends State<ShopMenuAdmin> {
   final MenuService _menuService = MenuService();
+
+  /// Categories already used by this shop's menu, offered as choices.
+  List<String> _categories = const [];
 
   void _showMessage(String message, {bool error = false}) {
     if (!mounted) return;
@@ -80,14 +84,11 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextField(
+                        _CategoryPicker(
                           controller: categoryController,
-                          maxLength: 80,
-                          decoration: const InputDecoration(
-                            labelText: 'หมวดหมู่',
-                            border: OutlineInputBorder(),
-                          ),
+                          existing: _categories,
                         ),
+                        const SizedBox(height: 12),
                         TextField(
                           controller: descriptionController,
                           maxLength: 200,
@@ -101,6 +102,8 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
                         TextField(
                           controller: priceController,
                           keyboardType: TextInputType.number,
+                          maxLength: 6,
+                          inputFormatters: [digitsOnly],
                           decoration: const InputDecoration(
                             labelText: 'ราคาเพิ่ม (บาท)',
                             helperText: 'เว้นว่างถ้ารวมอยู่ในบุฟเฟ่ต์แล้ว',
@@ -268,6 +271,7 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
           for (final item in items) {
             grouped.putIfAbsent(item.category, () => []).add(item);
           }
+          _categories = grouped.keys.toList();
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
             children:
@@ -353,6 +357,81 @@ class _ShopMenuAdminState extends State<ShopMenuAdmin> {
         onPressed: () => _openEditor(),
         icon: const Icon(Icons.add),
         label: const Text('เพิ่มเมนู'),
+      ),
+    );
+  }
+}
+
+/// Pick one of the shop's existing menu categories, or type a new one, so
+/// the same category isn't saved under slightly different spellings.
+class _CategoryPicker extends StatefulWidget {
+  const _CategoryPicker({required this.controller, required this.existing});
+
+  final TextEditingController controller;
+  final List<String> existing;
+
+  @override
+  State<_CategoryPicker> createState() => _CategoryPickerState();
+}
+
+class _CategoryPickerState extends State<_CategoryPicker> {
+  late bool _new =
+      widget.existing.isEmpty ||
+      (widget.controller.text.trim().isNotEmpty &&
+          !widget.existing.contains(widget.controller.text.trim()));
+
+  @override
+  Widget build(BuildContext context) {
+    final current = widget.controller.text.trim();
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'หมวดหมู่',
+        border: OutlineInputBorder(),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.existing.isNotEmpty)
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final category in widget.existing)
+                  ChoiceChip(
+                    label: Text(category),
+                    selected: !_new && current == category,
+                    onSelected:
+                        (_) => setState(() {
+                          _new = false;
+                          widget.controller.text = category;
+                        }),
+                  ),
+                ChoiceChip(
+                  avatar: const Icon(Icons.add, size: 18),
+                  label: const Text('หมวดใหม่'),
+                  selected: _new,
+                  onSelected:
+                      (_) => setState(() {
+                        _new = true;
+                        widget.controller.clear();
+                      }),
+                ),
+              ],
+            ),
+          if (_new) ...[
+            if (widget.existing.isNotEmpty) const SizedBox(height: 10),
+            TextField(
+              controller: widget.controller,
+              maxLength: 80,
+              autofocus: widget.existing.isNotEmpty,
+              decoration: const InputDecoration(
+                labelText: 'ชื่อหมวดใหม่',
+                hintText: 'เช่น เนื้อสัตว์, ผัก, ของหวาน',
+                isDense: true,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

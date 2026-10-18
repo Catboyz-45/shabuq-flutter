@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/promo_code_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/input_formatters.dart';
 
 class PromoCodeAdmin extends StatelessWidget {
   PromoCodeAdmin({super.key});
@@ -212,16 +213,27 @@ class _PromoCodeDialogState extends State<_PromoCodeDialog> {
             TextField(
               controller: _codeController,
               enabled: widget.initial == null,
-              decoration: const InputDecoration(labelText: 'โค้ด'),
+              maxLength: 30,
+              inputFormatters: [promoCodeCharacters],
+              decoration: const InputDecoration(
+                labelText: 'โค้ด',
+                helperText: 'อังกฤษตัวเล็ก ตัวเลข - หรือ _ อย่างน้อย 3 ตัว',
+              ),
             ),
             TextField(
               controller: _nameController,
+              maxLength: 80,
               decoration: const InputDecoration(labelText: 'ชื่อส่วนลด'),
             ),
             TextField(
               controller: _valueController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'จำนวนเงินส่วนลด'),
+              maxLength: 6,
+              inputFormatters: [digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'จำนวนเงินส่วนลด',
+                prefixText: '฿ ',
+              ),
             ),
             if (widget.initial != null)
               SwitchListTile(

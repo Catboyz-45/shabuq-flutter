@@ -118,21 +118,37 @@ void main() {
       expect(results, isEmpty);
     });
 
-    testWidgets('returns a draft with parsed zones', (tester) async {
+    testWidgets('returns a draft with picked zones', (tester) async {
+      // Tall enough for the whole form without scrolling.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final results = await pumpDialogLauncher(tester, const ShopFormDialog());
 
+      // Capitals and spaces are dropped or lowered as they are typed.
       await tester.enterText(
         find.widgetWithText(TextField, 'รหัสร้าน'),
-        'suki-bangkhen',
+        'Suki-Bang khen',
       );
       await tester.enterText(
         find.widgetWithText(TextField, 'ชื่อร้าน'),
         'Suki บางเขน',
       );
+      // The form starts with one zone; add a second, then try a duplicate.
       await tester.enterText(
-        find.widgetWithText(TextField, 'โซน (คั่นด้วย ,)'),
-        'ในร้าน, ระเบียง',
+        find.widgetWithText(TextField, 'ชื่อโซนใหม่'),
+        'ระเบียง',
       );
+      await tester.tap(find.text('เพิ่มโซน'));
+      await tester.pump();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'ชื่อโซนใหม่'),
+        'ในร้าน',
+      );
+      await tester.tap(find.text('เพิ่มโซน'));
+      await tester.pump();
+      expect(find.text('มีโซน "ในร้าน" แล้ว'), findsOneWidget);
+
       await tester.tap(find.widgetWithText(FilledButton, 'เพิ่มร้าน'));
       await tester.pumpAndSettle();
 
@@ -141,6 +157,7 @@ void main() {
       expect(draft.name, 'Suki บางเขน');
       expect(draft.zones, ['ในร้าน', 'ระเบียง']);
       expect(draft.pricePerPerson, 299);
+      expect(draft.openingHours, '');
     });
   });
 }

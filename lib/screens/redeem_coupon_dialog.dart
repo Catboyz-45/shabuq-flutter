@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/coupon_service.dart';
+import '../utils/input_formatters.dart';
 
 /// Shop staff type the code a customer shows, check the coupon and confirm
 /// it. Returns true when a coupon was redeemed.
@@ -100,7 +101,15 @@ class _RedeemCouponDialogState extends State<RedeemCouponDialog> {
             enabled: !_busy,
             autofocus: true,
             textCapitalization: TextCapitalization.characters,
-            maxLength: redemptionCodeLength + 2,
+            maxLength: redemptionCodeLength,
+            // Only letters the code can contain, so look-alikes such as O/0
+            // or I/1 can't be typed by mistake.
+            inputFormatters: [
+              CharacterFilter(
+                RegExp('[$redemptionAlphabet]'),
+                toUpperCase: true,
+              ),
+            ],
             decoration: InputDecoration(
               labelText: 'รหัสที่ลูกค้าแสดง',
               errorText: _error,

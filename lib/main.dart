@@ -2,6 +2,7 @@ import 'dart:async';
 
 // Import packages ที่จำเป็นสำหรับการทำงานของแอป
 import 'package:flutter/material.dart'; // สำหรับ UI
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart'; // สำหรับเริ่มต้น Firebase
 import 'package:firebase_auth/firebase_auth.dart'; // สำหรับการจัดการผู้ใช้ (Authentication)
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -53,6 +54,10 @@ class MyApp extends StatelessWidget {
               theme: AppTheme.light(),
               darkTheme: AppTheme.dark(),
               themeMode: themeController.effectiveMode,
+              // ปุ่มและข้อความของ dialog ในตัว Flutter เป็นภาษาไทย
+              locale: const Locale('th'),
+              supportedLocales: const [Locale('th'), Locale('en')],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
               home: const _AuthGate(),
             ),
       ),

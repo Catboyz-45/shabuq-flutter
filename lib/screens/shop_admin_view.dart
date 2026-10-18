@@ -5,9 +5,11 @@ import '../models/shop.dart';
 import '../services/admin_service.dart';
 import '../services/shop_service.dart';
 import '../theme/theme_controller.dart';
+import '../utils/input_formatters.dart';
 import '../utils/shop_form.dart';
 import '../widgets/brand.dart';
 import '../widgets/image_url_field.dart';
+import '../widgets/opening_hours_field.dart';
 import 'shop_menu_admin.dart';
 import 'shop_queue_admin.dart';
 import 'shop_stats_admin.dart';
@@ -269,7 +271,7 @@ class ShopSettingsAdmin extends StatefulWidget {
 class _ShopSettingsAdminState extends State<ShopSettingsAdmin> {
   final _shopService = ShopService();
   final _price = TextEditingController();
-  final _hours = TextEditingController();
+  String _hours = '';
   final _image = TextEditingController();
   final _location = TextEditingController();
   final _phone = TextEditingController();
@@ -279,7 +281,7 @@ class _ShopSettingsAdminState extends State<ShopSettingsAdmin> {
 
   @override
   void dispose() {
-    for (final controller in [_price, _hours, _image, _location, _phone]) {
+    for (final controller in [_price, _image, _location, _phone]) {
       controller.dispose();
     }
     super.dispose();
@@ -295,7 +297,7 @@ class _ShopSettingsAdminState extends State<ShopSettingsAdmin> {
       image: _image.text.trim(),
       zones: shop.bookableZones,
       pricePerPerson: int.tryParse(_price.text.trim()) ?? 0,
-      openingHours: _hours.text.trim(),
+      openingHours: _hours.trim(),
     );
     final error = validateShopDraft(draft, isNew: false);
     if (error != null) {
@@ -345,7 +347,7 @@ class _ShopSettingsAdminState extends State<ShopSettingsAdmin> {
         if (!_loaded) {
           _loaded = true;
           _price.text = '${shop.pricePerPerson}';
-          _hours.text = shop.openingHours;
+          _hours = shop.openingHours;
           _image.text = shop.image;
           _location.text = shop.location;
           _phone.text = shop.phone;
@@ -366,6 +368,8 @@ class _ShopSettingsAdminState extends State<ShopSettingsAdmin> {
               controller: _price,
               enabled: !_saving,
               keyboardType: TextInputType.number,
+              maxLength: 6,
+              inputFormatters: [digitsOnly],
               decoration: const InputDecoration(
                 labelText: 'ราคาต่อคน (บาท)',
                 border: OutlineInputBorder(),
@@ -373,15 +377,11 @@ class _ShopSettingsAdminState extends State<ShopSettingsAdmin> {
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _hours,
+            OpeningHoursField(
+              initial: _hours,
+              optional: true,
               enabled: !_saving,
-              maxLength: 40,
-              decoration: const InputDecoration(
-                labelText: 'เวลาเปิด–ปิด',
-                hintText: 'เช่น 11:00–22:00 ทุกวัน',
-                border: OutlineInputBorder(),
-              ),
+              onChanged: (value) => _hours = value,
             ),
             gap,
             TextField(
@@ -397,7 +397,8 @@ class _ShopSettingsAdminState extends State<ShopSettingsAdmin> {
             TextField(
               controller: _phone,
               enabled: !_saving,
-              maxLength: 30,
+              maxLength: phoneMaxLength,
+              inputFormatters: [phoneCharacters],
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
                 labelText: 'เบอร์โทร',
