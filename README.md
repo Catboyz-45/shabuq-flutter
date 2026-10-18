@@ -126,7 +126,7 @@ tool/
 
 - เว็บ: ใช้ได้ทันทีบน `localhost` และโดเมน Firebase Hosting ถ้าเอาขึ้นโดเมนอื่นต้องเพิ่มใน Authentication → Settings → Authorized domains
 - iOS: ตั้งค่าแล้ว (`CLIENT_ID`/`REVERSED_CLIENT_ID` ใน `GoogleService-Info.plist` และ URL scheme ใน `ios/Runner/Info.plist`)
-- Android: ต้องเพิ่ม SHA-1 ของ keystore ที่ใช้ build ใน Project settings → Your apps → Android แล้วดาวน์โหลด `google-services.json` ใหม่มาแทน `android/app/google-services.json`
+- Android: เพิ่ม SHA-1/SHA-256 ของ debug keystore (ซึ่งใช้ build release ด้วยตอนนี้) แล้ว และ `google-services.json` มี OAuth client ครบ ถ้าเปลี่ยนไปใช้ keystore สำหรับ release จริง ต้องเพิ่ม SHA ของ keystore นั้นใน Project settings → Your apps → Android ด้วย
 
 ### การเริ่มต้น Super Admin
 
@@ -172,6 +172,8 @@ firebase deploy --only firestore:rules,firestore:indexes
 ### ทดลองกับ Firebase Emulator
 
 ทดสอบแอปและ Security Rules บนเครื่องได้โดยไม่แตะข้อมูลจริง (ต้องมี Java 21 ขึ้นไป):
+
+บน Android Emulator แอปจะต่อ Firebase Emulator ที่ `10.0.2.2` ให้เอง (build debug อนุญาต HTTP ไปยัง emulator เท่านั้น)
 
 ```bash
 firebase emulators:start --only auth,firestore

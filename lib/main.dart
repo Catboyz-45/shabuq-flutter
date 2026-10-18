@@ -1,6 +1,7 @@
 import 'dart:async';
 
 // Import packages ที่จำเป็นสำหรับการทำงานของแอป
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart'; // สำหรับ UI
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart'; // สำหรับเริ่มต้น Firebase
@@ -24,8 +25,13 @@ Future<void> main() async {
   );
   // รันด้วย --dart-define=USE_FIREBASE_EMULATOR=true เพื่อทดสอบกับ Firebase Emulator
   if (const bool.fromEnvironment('USE_FIREBASE_EMULATOR')) {
-    await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
-    FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+    // The Android emulator reaches the computer at 10.0.2.2, not localhost.
+    final host =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+            ? '10.0.2.2'
+            : 'localhost';
+    await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+    FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
   }
   final themeController = await ThemeController.load();
   runApp(MyApp(themeController: themeController)); // เรียกใช้งานแอปหลัก
