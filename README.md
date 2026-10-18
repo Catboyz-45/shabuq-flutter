@@ -120,13 +120,13 @@ tool/
 
 โปรเจกต์นี้ตั้งค่าเริ่มต้นให้เชื่อมต่อ Firebase project `ftf3-f150b`
 
-### เปิดการเข้าสู่ระบบด้วย Google
+### การเข้าสู่ระบบด้วย Google
 
-1. Firebase Console → Authentication → Sign-in method → เปิด **Google**
-2. เว็บ: เพิ่มโดเมนที่ใช้งานใน Authentication → Settings → Authorized domains
-3. iOS: ใส่ `REVERSED_CLIENT_ID` จาก `GoogleService-Info.plist` เป็น URL scheme ใน `ios/Runner/Info.plist`
+เปิดใช้ในโปรเจกต์ `ftf3-f150b` แล้ว (Authentication → Sign-in method → Google, ชื่อที่ผู้ใช้เห็นคือ "ShabuQ")
 
-ถ้ายังไม่เปิด ปุ่มจะแจ้งว่า "ระบบยังไม่เปิดให้เข้าสู่ระบบด้วย Google" ส่วนการสมัครด้วยอีเมลใช้ได้ตามปกติ
+- เว็บ: ใช้ได้ทันทีบน `localhost` และโดเมน Firebase Hosting ถ้าเอาขึ้นโดเมนอื่นต้องเพิ่มใน Authentication → Settings → Authorized domains
+- iOS: ตั้งค่าแล้ว (`CLIENT_ID`/`REVERSED_CLIENT_ID` ใน `GoogleService-Info.plist` และ URL scheme ใน `ios/Runner/Info.plist`)
+- Android: ต้องเพิ่ม SHA-1 ของ keystore ที่ใช้ build ใน Project settings → Your apps → Android แล้วดาวน์โหลด `google-services.json` ใหม่มาแทน `android/app/google-services.json`
 
 ### การเริ่มต้น Super Admin
 
