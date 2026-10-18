@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -9,8 +10,9 @@ import '../services/admin_service.dart';
 import '../services/queue_service.dart';
 import '../services/shop_service.dart';
 import '../utils/queue_position.dart';
-import 'redeem_coupon_dialog.dart';
 import '../theme/app_theme.dart';
+import '../widgets/motion.dart';
+import 'redeem_coupon_dialog.dart';
 
 /// Live queue board for one shop: call the next queue per zone, add walk-ins,
 /// pause new bookings, and close queues as completed, no-show or cancelled.
@@ -170,123 +172,148 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
             if (!queueSnapshot.hasData || shop == null) {
               return const Center(child: CircularProgressIndicator());
             }
-            // Queues arrive oldest first; group today's by zone and set
+            // Queues arrive oldest first; split today's by status and set
             // aside leftovers from earlier days.
-            final byZone = <String, List<QueueEntry>>{
-              for (final zone in zones) zone: [],
-            };
             final today = queueDateKey(DateTime.now());
             final stale = <QueueEntry>[];
+            final waiting = <QueueEntry>[];
+            final called = <QueueEntry>[];
+            final serving = <QueueEntry>[];
             for (final queue in queueSnapshot.data!) {
               if (queue.isStale(today)) {
                 stale.add(queue);
               } else {
-                byZone.putIfAbsent(queue.zone, () => []).add(queue);
+                switch (queue.status) {
+                  case 'called':
+                    called.add(queue);
+                  case 'serving':
+                    serving.add(queue);
+                  default:
+                    waiting.add(queue);
+                }
               }
             }
+            final open = [...waiting, ...called, ...serving];
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              children: [
-                Card(
-                  color:
-                      accepting
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Theme.of(context).colorScheme.errorContainer,
-                  child: SwitchListTile(
-                    value: accepting,
-                    onChanged: _setAccepting,
-                    secondary: Icon(
-                      accepting ? Icons.play_circle : Icons.pause_circle,
-                    ),
-                    title: Text(
-                      accepting ? 'เปิดรับคิวอยู่' : 'ปิดรับคิวชั่วคราว',
-                    ),
-                    subtitle: const Text('ลูกค้าจะรับคิวใหม่ไม่ได้เมื่อปิด'),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _addWalkIn(zones),
-                        icon: const Icon(Icons.person_add),
-                        label: const Text('เพิ่มคิว walk-in'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _redeemCoupon,
-                        icon: const Icon(Icons.local_offer),
-                        label: const Text('ใช้คูปองลูกค้า'),
-                      ),
-                    ),
-                  ],
-                ),
-                if (stale.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    color: Theme.of(context).colorScheme.tertiaryContainer,
-                    child: ListTile(
-                      leading: const Icon(Icons.history_toggle_off),
-                      title: Text('คิวค้างจากวันก่อน ${stale.length} คิว'),
-                      subtitle: Text(
-                        stale.map((queue) => queue.queueLabel).join(', '),
-                      ),
-                      trailing: FilledButton.tonal(
-                        onPressed:
-                            _closing
-                                ? null
-                                : () => _closeAll(
-                                  stale.map((queue) => queue.id).toList(),
-                                  title: 'ปิดคิวค้างจากวันก่อน',
-                                ),
-                        child: const Text('ปิดทั้งหมด'),
-                      ),
-                    ),
-                  ),
-                ],
-                for (final entry in byZone.entries) ...[
-                  const SizedBox(height: 20),
-                  _ZoneHeader(
-                    zone: entry.key,
-                    waiting:
-                        entry.value
-                            .where((queue) => queue.status == 'waiting')
-                            .length,
-                    calling: _callingZone == entry.key,
-                    onCallNext:
-                        _callingZone == null
-                            ? () => _callNext(entry.key)
-                            : null,
-                  ),
-                  if (entry.value.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('ไม่มีคิวในโซนนี้'),
-                    ),
-                  for (final queue in entry.value)
-                    _QueueCard(
-                      key: ValueKey(queue.id),
-                      queue: queue,
-                      adminService: widget.adminService,
-                    ),
-                ],
-                const SizedBox(height: 24),
-                OutlinedButton.icon(
+            final header = _BoardHeader(
+              shop: shop,
+              waitingCount: waiting.length,
+              accepting: accepting,
+              onAccepting: _setAccepting,
+              onWalkIn: () => _addWalkIn(zones),
+              onRedeem: _redeemCoupon,
+            );
+            final staleBanner =
+                stale.isEmpty
+                    ? null
+                    : _StaleBanner(
+                      labels: stale.map((queue) => queue.queueLabel).toList(),
+                      onClose:
+                          _closing
+                              ? null
+                              : () => _closeAll(
+                                stale.map((queue) => queue.id).toList(),
+                                title: 'ปิดคิวค้างจากวันก่อน',
+                              ),
+                    );
+            final callButtons = [
+              for (final zone in zones)
+                _CallNextButton(
+                  zone: zones.length > 1 ? zone : null,
+                  next:
+                      waiting
+                          .where((queue) => queue.zone == zone)
+                          .firstOrNull
+                          ?.queueLabel,
+                  calling: _callingZone == zone,
                   onPressed:
-                      _closing || byZone.values.every((list) => list.isEmpty)
-                          ? null
-                          : () => _closeAll([
-                            for (final list in byZone.values)
-                              for (final queue in list) queue.id,
-                          ], title: 'ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
-                  icon: const Icon(Icons.nightlight_round),
-                  label: const Text('ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
+                      _callingZone == null ? () => _callNext(zone) : null,
                 ),
-              ],
+            ];
+            final closeAll = OutlinedButton.icon(
+              onPressed:
+                  _closing || open.isEmpty
+                      ? null
+                      : () => _closeAll([
+                        for (final queue in open) queue.id,
+                      ], title: 'ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
+              icon: const Icon(Icons.nightlight_round),
+              label: const Text('ปิดร้าน: ปิดคิวที่เหลือทั้งหมด'),
+            );
+
+            final columns = [
+              _BoardColumn(
+                title: 'รอคิว',
+                count: waiting.length,
+                color: Palette.yolk,
+                top: callButtons,
+                empty: 'ไม่มีคิวรอ',
+                queues: waiting,
+                adminService: widget.adminService,
+              ),
+              _BoardColumn(
+                title: 'เรียกแล้ว รอลูกค้ามา',
+                count: called.length,
+                color: Palette.ember,
+                empty: 'ยังไม่ได้เรียกคิว',
+                queues: called,
+                adminService: widget.adminService,
+              ),
+              _BoardColumn(
+                title: 'กำลังทาน',
+                count: serving.length,
+                color: Palette.mint,
+                empty: 'ยังไม่มีโต๊ะที่กำลังทาน',
+                queues: serving,
+                adminService: widget.adminService,
+                bottom: closeAll,
+              ),
+            ];
+
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth >= 900) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+                    child: Column(
+                      children: [
+                        header,
+                        if (staleBanner != null) ...[
+                          const SizedBox(height: 14),
+                          staleBanner,
+                        ],
+                        const SizedBox(height: 14),
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final (index, column)
+                                  in columns.indexed) ...[
+                                if (index > 0) const SizedBox(width: 14),
+                                Expanded(child: column.scrolling()),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                  children: [
+                    header,
+                    if (staleBanner != null) ...[
+                      const SizedBox(height: 12),
+                      staleBanner,
+                    ],
+                    for (final column in columns) ...[
+                      const SizedBox(height: 14),
+                      column,
+                    ],
+                  ],
+                );
+              },
             );
           },
         );
@@ -295,51 +322,334 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
   }
 }
 
-class _ZoneHeader extends StatelessWidget {
-  const _ZoneHeader({
-    required this.zone,
-    required this.waiting,
-    required this.calling,
-    required this.onCallNext,
+class _BoardHeader extends StatelessWidget {
+  const _BoardHeader({
+    required this.shop,
+    required this.waitingCount,
+    required this.accepting,
+    required this.onAccepting,
+    required this.onWalkIn,
+    required this.onRedeem,
   });
 
-  final String zone;
-  final int waiting;
-  final bool calling;
-  final VoidCallback? onCallNext;
+  final Shop shop;
+  final int waitingCount;
+  final bool accepting;
+  final ValueChanged<bool> onAccepting;
+  final VoidCallback onWalkIn;
+  final VoidCallback onRedeem;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final scheme = Theme.of(context).colorScheme;
+    final pace = shop.minutesPerQueue;
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: WrapAlignment.spaceBetween,
       children: [
-        Expanded(
-          child: Text(
-            '$zone • รอ $waiting คิว',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              shop.name,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            Text(
+              [
+                'วันนี้ • รอ $waitingCount คิว',
+                if (pace != null) 'เฉลี่ย ${pace.round()} นาทีต่อคิว',
+              ].join(' • '),
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ],
         ),
-        FilledButton.icon(
-          onPressed: waiting == 0 ? null : onCallNext,
-          icon:
-              calling
-                  ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                  : const Icon(Icons.campaign),
-          label: const Text('เรียกคิวถัดไป'),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            Material(
+              color:
+                  accepting ? scheme.tertiaryContainer : scheme.errorContainer,
+              borderRadius: BorderRadius.circular(24),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onTap: () => onAccepting(!accepting),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 8, 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        accepting ? 'เปิดรับคิว' : 'ปิดรับคิวชั่วคราว',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color:
+                              accepting
+                                  ? scheme.onTertiaryContainer
+                                  : scheme.onErrorContainer,
+                        ),
+                      ),
+                      Switch(value: accepting, onChanged: onAccepting),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: onWalkIn,
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: const Text('walk-in'),
+            ),
+            OutlinedButton.icon(
+              onPressed: onRedeem,
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+              icon: const Icon(Icons.local_offer_outlined),
+              label: const Text('ใช้คูปองลูกค้า'),
+            ),
+          ],
         ),
       ],
     );
   }
 }
 
-class _QueueCard extends StatefulWidget {
-  const _QueueCard({
-    super.key,
-    required this.queue,
-    required this.adminService,
+class _StaleBanner extends StatelessWidget {
+  const _StaleBanner({required this.labels, required this.onClose});
+
+  final List<String> labels;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'คิวค้างจากวันก่อน ${labels.length} คิว (${labels.join(', ')}) '
+              'ไม่นับรวมในคิววันนี้',
+              style: TextStyle(color: scheme.onPrimaryContainer),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: onClose,
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+            child: const Text('ปิดทั้งหมด'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The big yellow "call next" button, one per zone.
+class _CallNextButton extends StatelessWidget {
+  const _CallNextButton({
+    required this.zone,
+    required this.next,
+    required this.calling,
+    required this.onPressed,
   });
+
+  /// Shown when the shop has more than one zone.
+  final String? zone;
+  final String? next;
+  final bool calling;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final next = this.next;
+    if (next == null) {
+      return Container(
+        height: 56,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: scheme.outlineVariant, width: 1.5),
+        ),
+        child: Text(
+          zone == null ? 'ไม่มีคิวรอแล้ว' : '$zone: ไม่มีคิวรอ',
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
+      );
+    }
+    return FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(64),
+        backgroundColor: Palette.yolk,
+        foregroundColor: Palette.ink,
+        disabledBackgroundColor: Palette.yolkDeep,
+        disabledForegroundColor: Palette.ink,
+      ),
+      child:
+          calling
+              ? const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.6,
+                  color: Palette.ink,
+                ),
+              )
+              : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      zone == null ? 'เรียกคิวถัดไป' : '$zone: เรียกถัดไป',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    next,
+                    style: AppFonts.numbers(fontSize: 26, color: Palette.ink),
+                  ),
+                ],
+              ),
+    );
+  }
+}
+
+/// One status column of the board.
+class _BoardColumn extends StatelessWidget {
+  const _BoardColumn({
+    required this.title,
+    required this.count,
+    required this.color,
+    required this.empty,
+    required this.queues,
+    required this.adminService,
+    this.top = const [],
+    this.bottom,
+  });
+
+  final String title;
+  final int count;
+  final Color color;
+  final String empty;
+  final List<QueueEntry> queues;
+  final AdminService adminService;
+  final List<Widget> top;
+  final Widget? bottom;
+
+  /// The tablet layout: fixed header, scrolling cards.
+  Widget scrolling() => _BoardColumn(
+    title: title,
+    count: count,
+    color: color,
+    empty: empty,
+    queues: queues,
+    adminService: adminService,
+    top: top,
+    bottom: bottom,
+  )._build(scroll: true);
+
+  @override
+  Widget build(BuildContext context) => _build(scroll: false);
+
+  Widget _build({required bool scroll}) {
+    return Builder(
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        final cards = [
+          for (final widget in top) ...[widget, const SizedBox(height: 10)],
+          // Call-next buttons already say when nobody is waiting.
+          if (queues.isEmpty && top.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                empty,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            ),
+          for (final queue in queues)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: FadeSlideIn(
+                key: ValueKey('${queue.id}-${queue.status}'),
+                offset: -10,
+                duration: const Duration(milliseconds: 320),
+                child: _QueueCard(queue: queue, adminService: adminService),
+              ),
+            ),
+        ];
+        final heading = Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              transitionBuilder:
+                  (child, animation) =>
+                      ScaleTransition(scale: animation, child: child),
+              child: Text(
+                '$count',
+                key: ValueKey(count),
+                style: AppFonts.numbers(fontSize: 20, color: color),
+              ),
+            ),
+          ],
+        );
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: scroll ? MainAxisSize.max : MainAxisSize.min,
+            children: [
+              heading,
+              const SizedBox(height: 12),
+              if (scroll)
+                Expanded(child: ListView(children: cards))
+              else
+                ...cards,
+              if (bottom != null) ...[const SizedBox(height: 4), bottom!],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _QueueCard extends StatefulWidget {
+  const _QueueCard({required this.queue, required this.adminService});
 
   final QueueEntry queue;
   final AdminService adminService;
@@ -355,10 +665,14 @@ class _QueueCardState extends State<_QueueCard> {
   @override
   void initState() {
     super.initState();
-    // นับเวลาตั้งแต่เรียกคิว เพื่อเปิดปุ่ม "ไม่มา" เมื่อครบเวลา
-    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() {});
-    });
+    // Called queues count down every second towards the no-show grace
+    // period; other cards only show minutes.
+    _ticker = Timer.periodic(
+      Duration(seconds: widget.queue.status == 'called' ? 1 : 30),
+      (_) {
+        if (mounted) setState(() {});
+      },
+    );
   }
 
   @override
@@ -404,94 +718,228 @@ class _QueueCardState extends State<_QueueCard> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final queue = widget.queue;
-    final status = queue.status;
-    final calledAt = queue.calledAt;
-    final calledMinutes =
-        calledAt == null ? 0 : DateTime.now().difference(calledAt).inMinutes;
-    final canSkip = calledMinutes >= noShowGraceMinutes;
+    final now = DateTime.now();
     final name = queue.customerName.trim();
-    final walkIn = queue.walkIn;
+    final who = [
+      '${queue.partySize} คน',
+      if (queue.walkIn) 'walk-in',
+      if (name.isNotEmpty) name,
+    ].join(' • ');
 
-    final statusColors = StatusColors.of(context);
-    final (String statusText, Color statusColor) = switch (status) {
-      'called' => ('เรียกแล้ว $calledMinutes นาที', statusColors.next),
-      'serving' => ('กำลังใช้บริการ', statusColors.serving),
-      _ => ('รอคิว', Theme.of(context).colorScheme.primary),
-    };
+    final number = SizedBox(
+      width: 76,
+      child: Text(queue.queueLabel, style: AppFonts.numbers(fontSize: 26)),
+    );
+    final busy =
+        _saving
+            ? const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: LinearProgressIndicator(),
+            )
+            : null;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  queue.queueLabel,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    '${queue.partySize} คน'
-                    '${walkIn ? ' • walk-in' : ''}'
-                    '${name.isEmpty ? '' : ' • $name'}',
-                  ),
-                ),
-                Chip(
-                  label: Text(statusText),
-                  labelStyle: TextStyle(color: statusColor),
-                  side: BorderSide(color: statusColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (_saving)
-              const LinearProgressIndicator()
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: switch (status) {
-                  'waiting' => [
-                    FilledButton.tonal(
-                      onPressed: () => _setStatus('called'),
-                      child: const Text('เรียกคิวนี้'),
-                    ),
-                    TextButton(
-                      onPressed: () => _close('cancelled'),
-                      child: const Text('ยกเลิกคิว'),
-                    ),
-                  ],
-                  'called' => [
-                    FilledButton(
-                      onPressed: () => _setStatus('serving'),
-                      child: const Text('ลูกค้ามาแล้ว'),
-                    ),
-                    OutlinedButton(
-                      onPressed: canSkip ? () => _close('no_show') : null,
+    switch (queue.status) {
+      case 'called':
+        const grace = Duration(minutes: noShowGraceMinutes);
+        final calledAt = queue.calledAt;
+        final elapsed =
+            calledAt == null ? Duration.zero : now.difference(calledAt);
+        final late = elapsed >= grace;
+        final left = grace - elapsed;
+        final card = Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                child: Row(
+                  children: [
+                    number,
+                    Expanded(
                       child: Text(
-                        canSkip
-                            ? 'ไม่มา (ข้ามคิว)'
-                            : 'ข้ามได้ใน ${noShowGraceMinutes - calledMinutes} นาที',
+                        who,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                    Text(
+                      'เรียกแล้ว ${elapsed.inMinutes} นาที',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: late ? scheme.error : Palette.ember,
                       ),
                     ),
                   ],
-                  _ => [
-                    FilledButton(
-                      onPressed: () => _close('completed'),
-                      child: const Text('เสร็จสิ้น'),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                child:
+                    busy ??
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => _setStatus('serving'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(48),
+                              backgroundColor: scheme.onSurface,
+                              foregroundColor: scheme.surface,
+                            ),
+                            child: const Text('ลูกค้ามาแล้ว'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: late ? () => _close('no_show') : null,
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(48),
+                              foregroundColor: scheme.error,
+                              side: BorderSide(
+                                color:
+                                    late ? scheme.error : scheme.outlineVariant,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Text(
+                              late
+                                  ? 'ไม่มา ข้ามคิว'
+                                  : 'ข้ามได้ใน ${left.inMinutes + 1} นาที',
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                },
+              ),
+              SizedBox(
+                height: 4,
+                child: LinearProgressIndicator(
+                  value: late ? 1 : left.inMilliseconds / grace.inMilliseconds,
+                  color: late ? scheme.error : Palette.ember,
+                  backgroundColor: scheme.surfaceContainerHighest,
+                ),
+              ),
+            ],
+          ),
+        );
+        if (!late) return card;
+        // Past the grace period: the border pulses so staff notice it.
+        return LoopingBuilder(
+          duration: const Duration(milliseconds: 1400),
+          still: 0,
+          child: card,
+          builder:
+              (context, t, child) => DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color:
+                        Color.lerp(
+                          scheme.error,
+                          scheme.errorContainer,
+                          (sin(t * 2 * pi) + 1) / 2,
+                        )!,
+                    width: 2,
+                  ),
+                ),
+                child: child,
+              ),
+        );
+      case 'serving':
+        return _plainCard(
+          scheme,
+          children: [
+            number,
+            Expanded(
+              child: Text(
+                who,
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            if (busy != null)
+              const SizedBox(width: 80, child: LinearProgressIndicator())
+            else
+              FilledButton(
+                onPressed: () => _close('completed'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  backgroundColor: Palette.mint,
+                  foregroundColor: const Color(0xFF0E2A1C),
+                  shape: const StadiumBorder(),
+                ),
+                child: const Text('เสร็จสิ้น'),
               ),
           ],
-        ),
+        );
+      default:
+        final waited =
+            queue.createdAt == null
+                ? null
+                : now.difference(queue.createdAt!).inMinutes;
+        return _plainCard(
+          scheme,
+          children: [
+            number,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    who,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    [
+                      queue.zone,
+                      if (waited != null) 'รอ $waited นาที',
+                    ].join(' • '),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (busy != null)
+              const SizedBox(width: 80, child: LinearProgressIndicator())
+            else ...[
+              IconButton(
+                tooltip: 'ยกเลิกคิว',
+                onPressed: () => _close('cancelled'),
+                icon: Icon(Icons.close_rounded, color: scheme.onSurfaceVariant),
+              ),
+              OutlinedButton(
+                onPressed: () => _setStatus('called'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  shape: const StadiumBorder(),
+                ),
+                child: const Text('เรียก'),
+              ),
+            ],
+          ],
+        );
+    }
+  }
+
+  Widget _plainCard(ColorScheme scheme, {required List<Widget> children}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(14),
       ),
+      child: Row(children: children),
     );
   }
 }
@@ -528,6 +976,7 @@ class _WalkInDialogState extends State<_WalkInDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('เพิ่มคิว walk-in'),
+      scrollable: true,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

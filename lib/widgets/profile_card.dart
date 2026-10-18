@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/app_theme.dart';
+
 /// Icons a customer can pick for their avatar, by stored name.
 const avatarIcons = <String, IconData>{
   'person': Icons.person,
@@ -109,6 +111,7 @@ class _ProfileCardState extends State<ProfileCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     if (!_loaded) {
       return const Padding(
         padding: EdgeInsets.all(32),
@@ -116,68 +119,108 @@ class _ProfileCardState extends State<ProfileCard> {
       );
     }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Tooltip(
-          message: 'เปลี่ยนไอคอนและสี',
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _pickAvatar,
-            child: CircleAvatar(
-              radius: 48,
-              backgroundColor: Color(_color),
-              child: Icon(avatarIconFor(_icon), size: 48, color: Colors.white),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: 240,
-          child: TextField(
-            controller: _name,
-            textAlign: TextAlign.center,
-            maxLength: 60,
-            style: theme.textTheme.titleLarge,
-            decoration: const InputDecoration(
-              hintText: 'ชื่อผู้ใช้',
-              counterText: '',
-              border: InputBorder.none,
-            ),
-            onChanged: (value) => _queueSave('displayName', value.trim()),
-            onEditingComplete: _flush,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.email_outlined),
-                  title: const Text('อีเมล'),
-                  subtitle: Text(widget.email),
+        Row(
+          children: [
+            Tooltip(
+              message: 'เปลี่ยนไอคอนและสี',
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _pickAvatar,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CircleAvatar(
+                      radius: 38,
+                      backgroundColor: Color(_color),
+                      child: Icon(
+                        avatarIconFor(_icon),
+                        size: 40,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: scheme.onSurface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: scheme.surface, width: 2),
+                        ),
+                        child: Icon(
+                          Icons.edit_rounded,
+                          size: 14,
+                          color: scheme.surface,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const Divider(height: 1),
-                TextField(
-                  controller: _phone,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 10,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    icon: Icon(Icons.phone_outlined),
-                    labelText: 'เบอร์โทรศัพท์',
-                    hintText: 'กรอกเบอร์',
-                    counterText: '',
-                    border: InputBorder.none,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _name,
+                    maxLength: 60,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'ชื่อผู้ใช้',
+                      counterText: '',
+                      isDense: true,
+                      filled: false,
+                      contentPadding: EdgeInsets.zero,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                    ),
+                    onChanged:
+                        (value) => _queueSave('displayName', value.trim()),
+                    onEditingComplete: _flush,
                   ),
-                  onChanged: (value) => _queueSave('phone', value),
-                  onEditingComplete: _flush,
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.email,
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
             ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'ข้อมูลติดต่อ',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurfaceVariant,
           ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _phone,
+          keyboardType: TextInputType.phone,
+          maxLength: 10,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: AppFonts.numbers(fontSize: 18, fontWeight: FontWeight.w600),
+          decoration: const InputDecoration(
+            labelText: 'เบอร์โทร (ร้านใช้โทรหาเมื่อถึงคิว)',
+            hintText: 'กรอกเบอร์',
+            counterText: '',
+            prefixIcon: Icon(Icons.phone_outlined),
+          ),
+          onChanged: (value) => _queueSave('phone', value),
+          onEditingComplete: _flush,
         ),
       ],
     );

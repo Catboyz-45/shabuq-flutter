@@ -7,6 +7,7 @@ import '../services/admin_service.dart';
 import '../services/shop_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/shop_form.dart';
+import '../widgets/brand.dart';
 import 'admin_account_dialog.dart';
 import 'app_content_admin.dart';
 import 'banner_admin.dart';
@@ -231,7 +232,9 @@ class _SuperAdminPageState extends State<_SuperAdminPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ShabuQ Admin'),
+        title: const Row(
+          children: [Wordmark(size: 20), SizedBox(width: 10), Text('Admin')],
+        ),
         actions: [
           IconButton(
             tooltip: 'ออกจากระบบ',

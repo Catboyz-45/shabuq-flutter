@@ -4,15 +4,18 @@ import 'package:flutter/material.dart';
 import '../models/shop.dart';
 import '../services/admin_service.dart';
 import '../services/shop_service.dart';
+import '../theme/theme_controller.dart';
 import '../utils/shop_form.dart';
+import '../widgets/brand.dart';
 import '../widgets/image_url_field.dart';
 import 'shop_menu_admin.dart';
 import 'shop_queue_admin.dart';
 import 'shop_stats_admin.dart';
 
 /// Home of a shop admin: queue board, stats, menu and shop details for the
-/// one shop they were assigned.
-class ShopAdminView extends StatelessWidget {
+/// one shop they were assigned. Always uses the dark "kitchen display"
+/// theme, with a side rail on tablets and bottom tabs on phones.
+class ShopAdminView extends StatefulWidget {
   const ShopAdminView({
     super.key,
     required this.adminService,
@@ -23,9 +26,52 @@ class ShopAdminView extends StatelessWidget {
   final String uid;
 
   @override
+  State<ShopAdminView> createState() => _ShopAdminViewState();
+}
+
+class _ShopAdminViewState extends State<ShopAdminView> {
+  late final Stream<AdminProfile?> _admin = widget.adminService.watchAdmin(
+    widget.uid,
+  );
+  ThemeController? _theme;
+  int _tab = 0;
+
+  static const _destinations = [
+    (Icons.view_column_outlined, Icons.view_column_rounded, 'คิว'),
+    (Icons.insights_outlined, Icons.insights_rounded, 'สถิติ'),
+    (Icons.restaurant_menu_outlined, Icons.restaurant_menu_rounded, 'เมนู'),
+    (Icons.storefront_outlined, Icons.storefront_rounded, 'ร้าน'),
+  ];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_theme == null) {
+      _theme = ThemeScope.maybeRead(context);
+      final theme = _theme;
+      if (theme != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => theme.staffMode.value = true,
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    final theme = _theme;
+    if (theme != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => theme.staffMode.value = false,
+      );
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<AdminProfile?>(
-      stream: adminService.watchAdmin(uid),
+      stream: _admin,
       builder: (context, adminSnapshot) {
         if (adminSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -36,49 +82,163 @@ class ShopAdminView extends StatelessWidget {
         if (admin == null || !admin.active || admin.shopId.isEmpty) {
           return Scaffold(
             appBar: AppBar(
-              title: const Text('ShabuQ Admin'),
+              title: const Wordmark(size: 20),
               actions: const [_SignOutButton()],
             ),
             body: const Center(child: Text('บัญชีนี้ยังไม่ได้รับมอบหมายร้าน')),
           );
         }
 
-        // Tabs sit on the coloured app bar, so they use its text colour.
-        final onAppBar =
-            AppBarTheme.of(context).foregroundColor ??
-            Theme.of(context).colorScheme.onSurface;
-        return DefaultTabController(
-          length: 4,
-          child: Scaffold(
-            appBar: AppBar(
-              title: Text(admin.shopName),
-              actions: const [_SignOutButton()],
-              bottom: TabBar(
-                labelColor: onAppBar,
-                unselectedLabelColor: onAppBar.withValues(alpha: 0.7),
-                indicatorColor: onAppBar,
-                tabs: const [
-                  Tab(icon: Icon(Icons.queue), text: 'คิว'),
-                  Tab(icon: Icon(Icons.insights), text: 'สถิติ'),
-                  Tab(icon: Icon(Icons.restaurant_menu), text: 'เมนู'),
-                  Tab(icon: Icon(Icons.store), text: 'ข้อมูลร้าน'),
+        final pages = IndexedStack(
+          index: _tab,
+          children: [
+            ShopQueueAdmin(adminService: widget.adminService, admin: admin),
+            ShopStatsAdmin(
+              adminService: widget.adminService,
+              shopId: admin.shopId,
+            ),
+            ShopMenuAdmin(admin: admin),
+            ShopSettingsAdmin(shopId: admin.shopId),
+          ],
+        );
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 840) {
+              return Scaffold(
+                body: SafeArea(
+                  child: Row(
+                    children: [
+                      _StaffRail(
+                        selected: _tab,
+                        destinations: _destinations,
+                        onSelect: (index) => setState(() => _tab = index),
+                      ),
+                      VerticalDivider(
+                        width: 1,
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                      Expanded(child: pages),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Scaffold(
+              appBar: AppBar(
+                title: Row(
+                  children: [
+                    const QChip(size: 30),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        admin.shopName,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                actions: const [_SignOutButton()],
+              ),
+              body: pages,
+              bottomNavigationBar: NavigationBar(
+                selectedIndex: _tab,
+                onDestinationSelected: (index) => setState(() => _tab = index),
+                destinations: [
+                  for (final (icon, selectedIcon, label) in _destinations)
+                    NavigationDestination(
+                      icon: Icon(icon),
+                      selectedIcon: Icon(selectedIcon),
+                      label: label,
+                    ),
                 ],
               ),
-            ),
-            body: TabBarView(
-              children: [
-                ShopQueueAdmin(adminService: adminService, admin: admin),
-                ShopStatsAdmin(
-                  adminService: adminService,
-                  shopId: admin.shopId,
-                ),
-                ShopMenuAdmin(admin: admin),
-                ShopSettingsAdmin(shopId: admin.shopId),
-              ],
-            ),
-          ),
+            );
+          },
         );
       },
+    );
+  }
+}
+
+/// Left rail for tablets: the Q mark, the four sections and sign-out.
+class _StaffRail extends StatelessWidget {
+  const _StaffRail({
+    required this.selected,
+    required this.destinations,
+    required this.onSelect,
+  });
+
+  final int selected;
+  final List<(IconData, IconData, String)> destinations;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 92,
+      child: Column(
+        children: [
+          const SizedBox(height: 18),
+          const QChip(size: 48),
+          const SizedBox(height: 22),
+          for (final (index, (icon, selectedIcon, label))
+              in destinations.indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Semantics(
+                selected: index == selected,
+                button: true,
+                child: Material(
+                  color:
+                      index == selected
+                          ? scheme.surfaceContainerHigh
+                          : Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => onSelect(index),
+                    child: SizedBox(
+                      width: 74,
+                      height: 64,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            index == selected ? selectedIcon : icon,
+                            color:
+                                index == selected
+                                    ? scheme.primary
+                                    : scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight:
+                                  index == selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                              color:
+                                  index == selected
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const Spacer(),
+          const _SignOutButton(),
+          const SizedBox(height: 16),
+        ],
+      ),
     );
   }
 }
@@ -91,7 +251,7 @@ class _SignOutButton extends StatelessWidget {
     return IconButton(
       tooltip: 'ออกจากระบบ',
       onPressed: FirebaseAuth.instance.signOut,
-      icon: const Icon(Icons.logout),
+      icon: const Icon(Icons.logout_rounded),
     );
   }
 }

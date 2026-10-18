@@ -22,8 +22,9 @@ class ShopImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final value = source.trim();
     if (value.isEmpty || !isAllowedImageSource(value)) {
-      return _placeholder();
+      return _placeholder(Theme.of(context).colorScheme);
     }
+    final scheme = Theme.of(context).colorScheme;
     return Image(
       image:
           value.startsWith('https://')
@@ -34,17 +35,17 @@ class ShopImage extends StatelessWidget {
       fit: fit,
       loadingBuilder:
           (context, child, progress) =>
-              progress == null ? child : _placeholder(loading: true),
-      errorBuilder: (_, _, _) => _placeholder(),
+              progress == null ? child : _placeholder(scheme, loading: true),
+      errorBuilder: (_, _, _) => _placeholder(scheme),
     );
   }
 
-  Widget _placeholder({bool loading = false}) {
+  Widget _placeholder(ColorScheme scheme, {bool loading = false}) {
     final size = height != null && height!.isFinite ? height! : 96.0;
     return Container(
       width: width,
       height: height,
-      color: Colors.grey.shade200,
+      color: scheme.surfaceContainer,
       alignment: Alignment.center,
       child:
           loading
@@ -55,7 +56,7 @@ class ShopImage extends StatelessWidget {
               : Icon(
                 placeholderIcon,
                 size: (size / 2).clamp(16, 48),
-                color: Colors.grey,
+                color: scheme.onSurfaceVariant,
               ),
     );
   }

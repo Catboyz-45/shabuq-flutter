@@ -33,6 +33,20 @@ class ThemeController extends ValueNotifier<ThemeMode> {
     value = mode;
     await _preferences?.setString(_key, mode.name);
   }
+
+  /// True while the shop staff screens are open. They always use the dark
+  /// "kitchen display" look, dialogs included, without changing the
+  /// customer's saved choice.
+  final staffMode = ValueNotifier<bool>(false);
+
+  /// The mode the app should use right now.
+  ThemeMode get effectiveMode => staffMode.value ? ThemeMode.dark : value;
+
+  @override
+  void dispose() {
+    staffMode.dispose();
+    super.dispose();
+  }
 }
 
 /// Makes the [ThemeController] available to the widget tree.
@@ -45,4 +59,8 @@ class ThemeScope extends InheritedNotifier<ThemeController> {
 
   static ThemeController of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ThemeScope>()!.notifier!;
+
+  /// Like [of], without depending on changes; null outside a ThemeScope.
+  static ThemeController? maybeRead(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<ThemeScope>()?.notifier;
 }

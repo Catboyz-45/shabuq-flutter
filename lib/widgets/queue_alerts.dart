@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -6,7 +7,9 @@ import 'package:flutter/services.dart';
 
 import '../models/queue_entry.dart';
 import '../services/queue_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/queue_position.dart';
+import 'motion.dart';
 
 /// Watches the signed-in customer's queue on every tab and shows a banner at
 /// the top when only a few queues are left and again when the shop calls them.
@@ -132,7 +135,8 @@ class _QueueAlertsState extends State<QueueAlerts> {
           right: 0,
           child: SafeArea(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
+              duration: const Duration(milliseconds: 320),
+              switchInCurve: Motion.ease,
               transitionBuilder:
                   (child, animation) => SlideTransition(
                     position: Tween(
@@ -172,18 +176,18 @@ class _AlertBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    // ใช้สีเข้มกับตัวอักษรขาวทั้งสองโหมดเพื่อให้อ่านง่าย
-    final color = urgent ? const Color(0xFF15803D) : scheme.primary;
-    final onColor = urgent ? Colors.white : scheme.onPrimary;
+    // คิวถึงแล้ว: เหลืองเหมือนเครื่องเรียกคิว / ใกล้ถึง: ดำ ตัวอักษรขาว
+    final color = urgent ? Palette.yolk : Palette.ink;
+    final onColor = urgent ? Palette.ink : Colors.white;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Material(
         color: color,
-        elevation: 6,
-        borderRadius: BorderRadius.circular(16),
+        elevation: 8,
+        shadowColor: Colors.black45,
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           onTap: () {
             onClose();
             DefaultTabController.maybeOf(context)?.animateTo(1);
@@ -192,10 +196,23 @@ class _AlertBanner extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
             child: Row(
               children: [
-                Icon(
-                  urgent ? Icons.campaign : Icons.notifications_active,
-                  color: onColor,
-                  size: 28,
+                LoopingBuilder(
+                  duration: const Duration(milliseconds: 1400),
+                  child: Icon(
+                    urgent
+                        ? Icons.notifications_active_rounded
+                        : Icons.notifications_rounded,
+                    color: urgent ? Palette.ink : Palette.yolk,
+                    size: 28,
+                  ),
+                  builder:
+                      (context, t, child) => Transform.rotate(
+                        angle:
+                            urgent && t > 0.5
+                                ? sin((t - 0.5) * 36) * (1 - t) * 0.7
+                                : 0,
+                        child: child,
+                      ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -204,14 +221,14 @@ class _AlertBanner extends StatelessWidget {
                     style: TextStyle(
                       color: onColor,
                       fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
                 IconButton(
                   tooltip: 'ปิด',
                   onPressed: onClose,
-                  icon: Icon(Icons.close, color: onColor),
+                  icon: Icon(Icons.close_rounded, color: onColor),
                 ),
               ],
             ),

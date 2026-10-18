@@ -40,16 +40,19 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ThemeScope(
       controller: themeController,
-      child: ValueListenableBuilder<ThemeMode>(
-        valueListenable: themeController,
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          themeController,
+          themeController.staffMode,
+        ]),
         builder:
-            (context, themeMode, _) => MaterialApp(
+            (context, _) => MaterialApp(
               debugShowCheckedModeBanner: false, // ซ่อนแถบ debug ด้านขวาบน
               title: 'ShabuQ', // ชื่อแอป
               // สีทั้งหมดของแอปมาจาก AppTheme รองรับทั้งโหมดสว่างและโหมดมืด
               theme: AppTheme.light(),
               darkTheme: AppTheme.dark(),
-              themeMode: themeMode,
+              themeMode: themeController.effectiveMode,
               home: const _AuthGate(),
             ),
       ),
@@ -69,33 +72,16 @@ class _AuthGateState extends State<_AuthGate> {
   User? _user;
   bool _initialized = false;
 
-  /// True while the login form is still finishing its submit animation for
-  /// a sign-in that just happened. flutter_login reports the end of that
-  /// animation through AuthScreen.onFinished; swapping screens earlier would
-  /// dispose the form mid-animation.
-  bool _waitingForLoginAnimation = false;
-
   @override
   void initState() {
     super.initState();
-    _subscription = FirebaseAuth.instance.authStateChanges().listen(
-      _handleAuthChange,
-    );
-  }
-
-  void _handleAuthChange(User? user) {
-    if (!mounted) return;
-    setState(() {
-      // A user restored at start-up goes straight in; a fresh sign-in from
-      // the login form waits for the form to finish animating.
-      _waitingForLoginAnimation = user != null && _initialized && _user == null;
-      _user = user;
-      _initialized = true;
+    _subscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted) return;
+      setState(() {
+        _user = user;
+        _initialized = true;
+      });
     });
-  }
-
-  void _onLoginAnimationFinished() {
-    if (mounted) setState(() => _waitingForLoginAnimation = false);
   }
 
   @override
@@ -110,9 +96,7 @@ class _AuthGateState extends State<_AuthGate> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final user = _user;
-    if (user == null || _waitingForLoginAnimation) {
-      return AuthScreen(onFinished: _onLoginAnimationFinished);
-    }
+    if (user == null) return const AuthScreen();
     return _RoleRouter(user: user);
   }
 }
