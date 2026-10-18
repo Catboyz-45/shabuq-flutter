@@ -72,6 +72,21 @@ void main() {
     expect(find.text('ถึงคิวแล้ว!'), findsOneWidget);
   });
 
+  testWidgets('tells the shop the customer is on the way', (tester) async {
+    // A tall screen, so the whole "your turn" panel fits.
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await staff.setQueueStatus(queueId: 'me', status: 'called');
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('กำลังเดินทางไป'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('แจ้งร้านแล้วว่ากำลังเดินทางไป'), findsOneWidget);
+    expect((await queues.queueOf('me').get()).data()!['onTheWayAt'], isNotNull);
+  });
+
   testWidgets('shows closed queues in the history', (tester) async {
     await staff.closeQueue(queueId: 'me', outcome: 'no_show');
     await pumpScreen(tester);

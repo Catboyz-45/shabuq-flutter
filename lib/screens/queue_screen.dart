@@ -73,6 +73,17 @@ class _QueueScreenState extends State<QueueScreen> {
     }
   }
 
+  Future<void> _markOnTheWay(String uid) async {
+    try {
+      await _queueService.markOnTheWay(uid);
+    } on FirebaseException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('แจ้งร้านไม่สำเร็จ กรุณาลองใหม่')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = _uid;
@@ -129,6 +140,7 @@ class _QueueScreenState extends State<QueueScreen> {
                             queueService: _queueService,
                             shopService: _shopService,
                             onCancel: () => _cancelQueue(uid),
+                            onTheWay: () => _markOnTheWay(uid),
                           ),
                           const SizedBox(height: 28),
                         ],
@@ -152,12 +164,14 @@ class _ActiveQueue extends StatefulWidget {
     required this.queueService,
     required this.shopService,
     required this.onCancel,
+    required this.onTheWay,
   });
 
   final QueueEntry queue;
   final QueueService queueService;
   final ShopService shopService;
   final VoidCallback onCancel;
+  final Future<void> Function() onTheWay;
 
   @override
   State<_ActiveQueue> createState() => _ActiveQueueState();
@@ -238,7 +252,7 @@ class _ActiveQueueState extends State<_ActiveQueue> {
             if (!stale && progress == QueueProgress.called) {
               return Column(
                 children: [
-                  _CalledPanel(queue: queue),
+                  _CalledPanel(queue: queue, onTheWay: widget.onTheWay),
                   const SizedBox(height: 14),
                   actions,
                 ],
@@ -721,9 +735,12 @@ class _NotifyHint extends StatelessWidget {
 /// Full yellow "it's your turn" panel with a ringing bell and the time left
 /// before the shop may skip the queue.
 class _CalledPanel extends StatefulWidget {
-  const _CalledPanel({required this.queue});
+  const _CalledPanel({required this.queue, required this.onTheWay});
 
   final QueueEntry queue;
+
+  /// Tells the shop the customer is coming.
+  final Future<void> Function() onTheWay;
 
   @override
   State<_CalledPanel> createState() => _CalledPanelState();
@@ -731,6 +748,13 @@ class _CalledPanel extends StatefulWidget {
 
 class _CalledPanelState extends State<_CalledPanel> {
   Timer? _ticker;
+  bool _sending = false;
+
+  Future<void> _sendOnTheWay() async {
+    setState(() => _sending = true);
+    await widget.onTheWay();
+    if (mounted) setState(() => _sending = false);
+  }
 
   @override
   void initState() {
@@ -780,7 +804,7 @@ class _CalledPanelState extends State<_CalledPanel> {
             ),
             const SizedBox(height: 4),
             Text(
-              'เชิญที่หน้าร้าน${queue.shopName} แล้วแจ้งเลขคิวกับพนักงาน',
+              'เชิญที่หน้าร้าน ${queue.shopName} แล้วแจ้งเลขคิวกับพนักงาน',
               style: const TextStyle(fontSize: 16, color: Color(0xFF3A2E00)),
             ),
             const SizedBox(height: 18),
@@ -840,6 +864,57 @@ class _CalledPanelState extends State<_CalledPanel> {
                 ),
               ),
             ],
+            const SizedBox(height: 18),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child:
+                  queue.onTheWayAt == null
+                      ? FilledButton.icon(
+                        key: const ValueKey('send'),
+                        onPressed: _sending ? null : _sendOnTheWay,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
+                          backgroundColor: Palette.ink,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon:
+                            _sending
+                                ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Icon(Icons.directions_walk_rounded),
+                        label: const Text('กำลังเดินทางไป'),
+                      )
+                      : Container(
+                        key: const ValueKey('sent'),
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
+                          color: Palette.yolkDeep,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: Palette.ink,
+                            ),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'แจ้งร้านแล้วว่ากำลังเดินทางไป',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+            ),
           ],
         ),
       ),

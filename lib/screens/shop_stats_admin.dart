@@ -26,6 +26,7 @@ class ShopStatsAdmin extends StatefulWidget {
 
 class _ShopStatsAdminState extends State<ShopStatsAdmin> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _history;
+  int _days = ShopStats.defaultDays;
 
   @override
   void initState() {
@@ -48,12 +49,12 @@ class _ShopStatsAdminState extends State<ShopStatsAdmin> {
           for (final document in snapshot.data!.docs)
             if (_toClosedQueue(document.data()) case final queue?) queue,
         ];
-        final stats = computeShopStats(history, DateTime.now());
+        final stats = computeShopStats(history, DateTime.now(), days: _days);
         return LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 900;
             final chart = _Panel(
-              title: 'คิวแต่ละชั่วโมง (${ShopStats.days} วันล่าสุด)',
+              title: 'คิวแต่ละชั่วโมง (${stats.days} วันล่าสุด)',
               trailing: _peakLabel(stats.queuesByHour),
               fill: wide,
               child:
@@ -65,24 +66,48 @@ class _ShopStatsAdminState extends State<ShopStatsAdmin> {
                       ),
             );
             final side = [
-              _WaitCard(minutes: stats.averageWaitMinutes),
+              _WaitCard(minutes: stats.averageWaitMinutes, days: stats.days),
               const SizedBox(height: 14),
               _ZonePanel(counts: stats.queuesByZone),
             ];
             return ListView(
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 32),
               children: [
-                Text(
-                  'สถิติร้าน',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  'วันนี้ และย้อนหลัง ${ShopStats.days} วัน',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'สถิติร้าน',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          'ตัวเลขวันนี้ และย้อนหลัง ${stats.days} วัน',
+                          style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      segments: [
+                        for (final days in ShopStats.periods)
+                          ButtonSegment(value: days, label: Text('$days วัน')),
+                      ],
+                      selected: {_days},
+                      onSelectionChanged:
+                          (selection) =>
+                              setState(() => _days = selection.first),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 _Metrics(stats: stats, columns: wide ? 4 : 2),
@@ -318,9 +343,10 @@ class _Panel extends StatelessWidget {
 }
 
 class _WaitCard extends StatelessWidget {
-  const _WaitCard({required this.minutes});
+  const _WaitCard({required this.minutes, required this.days});
 
   final double? minutes;
+  final int days;
 
   @override
   Widget build(BuildContext context) {
@@ -356,7 +382,7 @@ class _WaitCard extends StatelessWidget {
               ),
             ),
             Text(
-              'จากรับคิวถึงร้านเรียก • ${ShopStats.days} วันล่าสุด',
+              'จากรับคิวถึงร้านเรียก • $days วันล่าสุด',
               style: const TextStyle(fontSize: 13),
             ),
           ],

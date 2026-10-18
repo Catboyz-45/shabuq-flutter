@@ -222,4 +222,23 @@ void main() {
       expect(walkIns.docs.single.data()['customerName'], 'คุณต้น');
     });
   });
+
+  test('markOnTheWay records the time and survives closing', () async {
+    await addShop();
+    await queues.bookQueue(
+      uid: 'me',
+      shopId: 'teenoi',
+      zone: 'ในร้าน',
+      partySize: 2,
+    );
+    await admin.setQueueStatus(queueId: 'me', status: 'called');
+
+    await queues.markOnTheWay('me');
+    final queue = (await queues.queueOf('me').get()).data()!;
+    expect(queue['onTheWayAt'], isA<Timestamp>());
+
+    await admin.closeQueue(queueId: 'me', outcome: 'completed');
+    final history = await firestore.collection('queueHistory').get();
+    expect(history.docs.single.data()['onTheWayAt'], isA<Timestamp>());
+  });
 }

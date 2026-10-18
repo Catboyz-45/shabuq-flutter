@@ -201,6 +201,11 @@ class QueueService {
     return label;
   }
 
+  /// Tells the shop a called customer is on their way.
+  Future<void> markOnTheWay(String uid) {
+    return queueOf(uid).update({'onTheWayAt': FieldValue.serverTimestamp()});
+  }
+
   /// Removes the customer's own active queue and its ticket together.
   Future<void> cancelMyQueue(String uid) async {
     final queue = await queueOf(uid).get();

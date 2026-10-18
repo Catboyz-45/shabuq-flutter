@@ -89,4 +89,16 @@ void main() {
     expect(stats.queuesByZone, {'ในร้าน': 2, 'ระเบียง': 1});
     expect(stats.queuesByZone.keys.first, 'ในร้าน');
   });
+
+  test('covers a longer period when asked', () {
+    final history = [
+      queue('completed', DateTime(2026, 5, 10, 12), zone: 'ในร้าน'),
+      queue('completed', DateTime(2026, 4, 20, 12), zone: 'ในร้าน'),
+    ];
+
+    expect(computeShopStats(history, now).queuesByZone['ในร้าน'], 1);
+    final month = computeShopStats(history, now, days: 30);
+    expect(month.days, 30);
+    expect(month.queuesByZone['ในร้าน'], 2);
+  });
 }

@@ -130,6 +130,15 @@ await expectStatus('booking dated today (Bangkok) succeeds', commit(customer.tok
 await expectStatus('customer bumps a counter alone', commit(customer.token, [update('shops/wiyaki/queueCounters/A', { date: s(today), last: i(1) })]), 403);
 await expectStatus('customer calls a queue', commit(customer.token, [update(`queues/${guest.uid}`, { status: s('called') }, [], ['status'])]), 403);
 
+console.log('— On the way');
+const onTheWay = (token, uid) =>
+  commit(token, [update(`queues/${uid}`, {}, now('onTheWayAt'), [])]);
+await expectStatus('customer says on the way before being called', onTheWay(guest.token, guest.uid), 403);
+await expectStatus('staff call the queue', commit(staff.token, [update(`queues/${guest.uid}`, { status: s('called') }, now('calledAt'), ['status'])]), 200);
+await expectStatus('customer says on the way once called', onTheWay(guest.token, guest.uid), 200);
+await expectStatus('customer marks someone else on the way', onTheWay(customer.token, guest.uid), 403);
+await expectStatus('customer seats themself', commit(guest.token, [update(`queues/${guest.uid}`, { status: s('serving') }, [], ['status'])]), 403);
+
 console.log('— Shops');
 const shop = (id) => update(
   `shops/${id}`,

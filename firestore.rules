@@ -503,11 +503,22 @@ service cloud.firestore {
             request.resource.data.walkIn == true
           )
         );
-      allow update: if isShopAdminFor(resource.data.shopId) &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'calledAt']) &&
-        request.resource.data.status in ['waiting', 'called', 'serving'] &&
-        request.resource.data.get('calledAt', request.time) is timestamp;
+      allow update: if
+        (
+          isShopAdminFor(resource.data.shopId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'calledAt']) &&
+          request.resource.data.status in ['waiting', 'called', 'serving'] &&
+          request.resource.data.get('calledAt', request.time) is timestamp
+        ) ||
+        (
+          // Once called, the customer may tell the shop they are on the way.
+          isOwner(queueId) &&
+          resource.data.status == 'called' &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['onTheWayAt']) &&
+          request.resource.data.onTheWayAt == request.time
+        );
       allow delete: if
         isOwner(queueId) ||
         (
@@ -593,6 +604,7 @@ service cloud.firestore {
           'status',
           'createdAt',
           'calledAt',
+          'onTheWayAt',
           'queueId',
           'completedAt',
           'completedBy'

@@ -11,6 +11,7 @@ import '../services/queue_service.dart';
 import '../services/shop_service.dart';
 import '../utils/queue_position.dart';
 import '../theme/app_theme.dart';
+import '../widgets/brand.dart';
 import '../widgets/motion.dart';
 import 'redeem_coupon_dialog.dart';
 
@@ -768,6 +769,19 @@ class _QueueCardState extends State<_QueueCard> {
                         style: TextStyle(color: scheme.onSurfaceVariant),
                       ),
                     ),
+                    if (queue.onTheWayAt != null) ...[
+                      StatusPill(
+                        label: 'กำลังเดินทางมา',
+                        background: scheme.tertiaryContainer,
+                        foreground: scheme.onTertiaryContainer,
+                        leading: Icon(
+                          Icons.directions_walk_rounded,
+                          size: 16,
+                          color: scheme.onTertiaryContainer,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Text(
                       'เรียกแล้ว ${elapsed.inMinutes} นาที',
                       style: TextStyle(

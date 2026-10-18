@@ -21,6 +21,7 @@ class QueueEntry {
     this.customerName = '',
     this.createdAt,
     this.calledAt,
+    this.onTheWayAt,
     this.completedAt,
   });
 
@@ -47,6 +48,9 @@ class QueueEntry {
   /// Null while the server timestamp of a fresh write is still pending.
   final DateTime? createdAt;
   final DateTime? calledAt;
+
+  /// When the called customer tapped "on my way", if they did.
+  final DateTime? onTheWayAt;
   final DateTime? completedAt;
 
   bool isStale(String today) => isStaleQueue(queueDate, today: today);
@@ -74,6 +78,7 @@ class QueueEntry {
       status: data['status'] as String? ?? 'waiting',
       createdAt: time('createdAt'),
       calledAt: time('calledAt'),
+      onTheWayAt: time('onTheWayAt'),
       completedAt: time('completedAt'),
     );
   }

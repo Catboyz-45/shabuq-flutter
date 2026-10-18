@@ -24,36 +24,46 @@ class ShopStats {
     required this.queuesByHour,
     this.yesterdayTotal = 0,
     this.queuesByZone = const {},
+    this.days = defaultDays,
   });
 
   final int todayCompleted;
   final int todayNoShow;
   final int todayCancelled;
 
-  /// Booking to being called, over the last [ShopStats.days] days.
+  /// Booking to being called, over the last [days] days.
   final double? averageWaitMinutes;
 
   /// Index = hour of day (0–23), value = queues booked in that hour over the
-  /// last [ShopStats.days] days.
+  /// last [days] days.
   final List<int> queuesByHour;
 
   /// Queues closed yesterday, to compare today against.
   final int yesterdayTotal;
 
-  /// Queues booked per zone over the last [ShopStats.days] days, busiest
+  /// Queues booked per zone over the last [days] days, busiest
   /// first.
   final Map<String, int> queuesByZone;
 
-  static const days = 7;
+  /// How many days, today included, the period figures cover.
+  final int days;
+
+  static const defaultDays = 7;
+
+  /// Periods staff can switch between.
+  static const periods = [7, 30];
 
   int get todayTotal => todayCompleted + todayNoShow + todayCancelled;
 }
 
-ShopStats computeShopStats(List<ClosedQueue> history, DateTime now) {
+/// Today's outcomes plus wait, hours and zones over the last [days] days.
+ShopStats computeShopStats(
+  List<ClosedQueue> history,
+  DateTime now, {
+  int days = ShopStats.defaultDays,
+}) {
   final startOfToday = DateTime(now.year, now.month, now.day);
-  final weekStart = startOfToday.subtract(
-    const Duration(days: ShopStats.days - 1),
-  );
+  final weekStart = DateTime(now.year, now.month, now.day - (days - 1));
   final startOfYesterday = DateTime(now.year, now.month, now.day - 1);
   var completed = 0, noShow = 0, cancelled = 0, yesterday = 0;
   final byHour = List<int>.filled(24, 0);
@@ -96,6 +106,7 @@ ShopStats computeShopStats(List<ClosedQueue> history, DateTime now) {
             : waits.reduce((a, b) => a + b) / waits.length / 60,
     queuesByHour: byHour,
     yesterdayTotal: yesterday,
+    days: days,
     queuesByZone: Map.fromEntries(
       byZone.entries.toList()..sort((a, b) => b.value.compareTo(a.value)),
     ),

@@ -25,7 +25,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-enum _ShopFilter { all, open }
+enum _ShopFilter { all, open, shortWait }
+
+/// "Short wait" means at most this many queues ahead.
+const _shortWaitQueues = 3;
 
 class _HomeScreenState extends State<HomeScreen> {
   final ShopService _shopService = ShopService();
@@ -37,14 +40,36 @@ class _HomeScreenState extends State<HomeScreen> {
   late final Stream<QueueEntry?> _myQueue = _queueService.watchMyQueue(
     FirebaseAuth.instance.currentUser?.uid ?? '-',
   );
-  final _waitingCounts = <String, Stream<int>>{};
+
+  /// Live number of waiting queues per shop, for the rows and the
+  /// short-wait filter.
+  final _waiting = <String, int>{};
+  final _waitingSubscriptions = <String, StreamSubscription<int>>{};
   String _query = '';
   _ShopFilter _filter = _ShopFilter.all;
 
-  Stream<int> _waitingCount(String shopId) => _waitingCounts.putIfAbsent(
-    shopId,
-    () => _queueService.watchWaitingCount(shopId),
-  );
+  void _watchWaiting(List<Shop> shops) {
+    final ids = {for (final shop in shops) shop.id};
+    for (final id in _waitingSubscriptions.keys.toList()) {
+      if (!ids.contains(id)) _waitingSubscriptions.remove(id)?.cancel();
+    }
+    for (final id in ids) {
+      _waitingSubscriptions.putIfAbsent(
+        id,
+        () => _queueService.watchWaitingCount(id).listen((count) {
+          if (mounted) setState(() => _waiting[id] = count);
+        }),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final subscription in _waitingSubscriptions.values) {
+      subscription.cancel();
+    }
+    super.dispose();
+  }
 
   Future<void> _openShop(Shop shop) async {
     final tabs = DefaultTabController.maybeOf(context);
@@ -69,7 +94,14 @@ class _HomeScreenState extends State<HomeScreen> {
         if ((query.isEmpty ||
                 shop.name.toLowerCase().contains(query) ||
                 shop.location.toLowerCase().contains(query)) &&
-            (_filter == _ShopFilter.all || shop.canBook))
+            switch (_filter) {
+              _ShopFilter.all => true,
+              _ShopFilter.open => shop.canBook,
+              _ShopFilter.shortWait =>
+                shop.canBook &&
+                    (_waiting[shop.id] ?? _shortWaitQueues + 1) <=
+                        _shortWaitQueues,
+            })
           shop,
     ];
   }
@@ -84,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
           stream: _shops,
           builder: (context, snapshot) {
             final shops = snapshot.data;
+            if (shops != null) _watchWaiting(shops);
             final visible = shops == null ? const <Shop>[] : _visible(shops);
             return CustomScrollView(
               slivers: [
@@ -137,23 +170,37 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                       const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          _FilterChip(
-                            label: 'ทั้งหมด',
-                            selected: _filter == _ShopFilter.all,
-                            onTap:
-                                () => setState(() => _filter = _ShopFilter.all),
-                          ),
-                          const SizedBox(width: 8),
-                          _FilterChip(
-                            label: 'เปิดรับคิว',
-                            selected: _filter == _ShopFilter.open,
-                            onTap:
-                                () =>
-                                    setState(() => _filter = _ShopFilter.open),
-                          ),
-                        ],
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _FilterChip(
+                              label: 'ทั้งหมด',
+                              selected: _filter == _ShopFilter.all,
+                              onTap:
+                                  () =>
+                                      setState(() => _filter = _ShopFilter.all),
+                            ),
+                            const SizedBox(width: 8),
+                            _FilterChip(
+                              label: 'เปิดรับคิว',
+                              selected: _filter == _ShopFilter.open,
+                              onTap:
+                                  () => setState(
+                                    () => _filter = _ShopFilter.open,
+                                  ),
+                            ),
+                            const SizedBox(width: 8),
+                            _FilterChip(
+                              label: 'รอไม่เกิน $_shortWaitQueues คิว',
+                              selected: _filter == _ShopFilter.shortWait,
+                              onTap:
+                                  () => setState(
+                                    () => _filter = _ShopFilter.shortWait,
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
                       _BannerCarousel(
                         stream: _banners,
@@ -200,7 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             delay: Duration(milliseconds: 60 * min(index, 6)),
                             child: _ShopRow(
                               shop: visible[index],
-                              waitingCount: _waitingCount(visible[index].id),
+                              waitingCount: _waiting[visible[index].id],
                               onTap: () => _openShop(visible[index]),
                             ),
                           ),
@@ -521,7 +568,9 @@ class _ShopRow extends StatelessWidget {
   });
 
   final Shop shop;
-  final Stream<int> waitingCount;
+
+  /// Null until the first count arrives.
+  final int? waitingCount;
   final VoidCallback onTap;
 
   @override
@@ -584,25 +633,18 @@ class _ShopRow extends StatelessWidget {
                           background: scheme.surfaceContainer,
                           foreground: scheme.onSurfaceVariant,
                         ),
-                      if (shop.canBook)
-                        StreamBuilder<int>(
-                          stream: waitingCount,
-                          builder: (context, snapshot) {
-                            final count = snapshot.data;
-                            if (count == null) return const SizedBox.shrink();
-                            return count == 0
-                                ? StatusPill(
-                                  label: 'ไม่ต้องรอ',
-                                  background: scheme.surfaceContainer,
-                                  foreground: scheme.onSurface,
-                                )
-                                : StatusPill(
-                                  label: 'รอ $count คิว',
-                                  background: scheme.secondaryContainer,
-                                  foreground: scheme.onSecondaryContainer,
-                                );
-                          },
-                        ),
+                      if (shop.canBook && waitingCount != null)
+                        waitingCount == 0
+                            ? StatusPill(
+                              label: 'ไม่ต้องรอ',
+                              background: scheme.surfaceContainer,
+                              foreground: scheme.onSurface,
+                            )
+                            : StatusPill(
+                              label: 'รอ $waitingCount คิว',
+                              background: scheme.secondaryContainer,
+                              foreground: scheme.onSecondaryContainer,
+                            ),
                     ],
                   ),
                 ],
