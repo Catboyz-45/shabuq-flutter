@@ -9,9 +9,11 @@ import '../services/menu_service.dart';
 import '../services/queue_service.dart';
 import '../services/shop_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/last_booking.dart';
 import '../utils/maps.dart';
 import '../utils/payment_calculator.dart';
 import '../utils/queue_position.dart';
+import '../widgets/booking_flow.dart';
 import '../widgets/brand.dart';
 import '../widgets/motion.dart';
 import '../widgets/shop_image.dart';
@@ -58,6 +60,14 @@ class _ShopScreenState extends State<ShopScreen> {
       FirebaseAuth.instance.currentUser?.uid ?? '-',
     );
     _menu = _menuService.watchMenu(_shopId);
+    // Start from what this customer booked here last time.
+    LastBooking.load(_shopId).then((last) {
+      if (!mounted || last == null) return;
+      setState(() {
+        _party = last.partySize.clamp(1, _maxParty);
+        _selectedZone = last.zone;
+      });
+    });
   }
 
   @override
@@ -91,13 +101,10 @@ class _ShopScreenState extends State<ShopScreen> {
     if (uid == null || _booking) return;
     setState(() => _booking = true);
     try {
-      final label = await _queueService.bookQueue(
-        uid: uid,
-        shopId: _shopId,
-        zone: zone,
-        partySize: _party,
-      );
-      if (!mounted) return;
+      final label = await BookingFlow(
+        _queueService,
+      ).book(context, uid: uid, shopId: _shopId, zone: zone, partySize: _party);
+      if (!mounted || label == null) return;
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => _BookedDialog(label: label),

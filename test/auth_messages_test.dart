@@ -24,4 +24,16 @@ void main() {
   test('falls back to a generic Thai message', () {
     expect(authErrorMessage('something-new'), 'เกิดข้อผิดพลาด กรุณาลองใหม่');
   });
+
+  test('closing the Google window is not an error', () {
+    expect(googleSignInErrorMessage('popup-closed-by-user'), isNull);
+    expect(
+      googleSignInErrorMessage('operation-not-allowed'),
+      contains('Google'),
+    );
+    expect(
+      googleSignInErrorMessage('too-many-requests'),
+      authErrorMessage('too-many-requests'),
+    );
+  });
 }

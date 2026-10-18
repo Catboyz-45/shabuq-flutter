@@ -19,6 +19,7 @@ class QueueEntry {
     this.queueDate,
     this.walkIn = false,
     this.customerName = '',
+    this.customerPhone = '',
     this.createdAt,
     this.calledAt,
     this.onTheWayAt,
@@ -40,6 +41,9 @@ class QueueEntry {
   final String? queueDate;
   final bool walkIn;
   final String customerName;
+
+  /// Phone the shop can call; empty when the customer gave none.
+  final String customerPhone;
 
   /// waiting / called / serving while active; completed / no_show /
   /// cancelled once in history.
@@ -75,6 +79,7 @@ class QueueEntry {
       queueDate: data['queueDate'] as String?,
       walkIn: data['walkIn'] as bool? ?? false,
       customerName: data['customerName'] as String? ?? '',
+      customerPhone: data['customerPhone'] as String? ?? '',
       status: data['status'] as String? ?? 'waiting',
       createdAt: time('createdAt'),
       calledAt: time('calledAt'),

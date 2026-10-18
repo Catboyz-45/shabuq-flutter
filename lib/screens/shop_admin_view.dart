@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/shop.dart';
 import '../services/admin_service.dart';
@@ -46,6 +47,13 @@ class _ShopAdminViewState extends State<ShopAdminView> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // Keep the counter tablet's screen on while the board is open.
+    WakelockPlus.enable().catchError((Object _) {});
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_theme == null) {
@@ -61,6 +69,7 @@ class _ShopAdminViewState extends State<ShopAdminView> {
 
   @override
   void dispose() {
+    WakelockPlus.disable().catchError((Object _) {});
     final theme = _theme;
     if (theme != null) {
       WidgetsBinding.instance.addPostFrameCallback(

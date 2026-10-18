@@ -24,3 +24,24 @@ String authErrorMessage(String code) {
       return 'เกิดข้อผิดพลาด กรุณาลองใหม่';
   }
 }
+
+/// Message for a failed Google sign-in, or null when the customer just
+/// closed the Google window, which needs no message.
+String? googleSignInErrorMessage(String code) {
+  switch (code) {
+    case 'popup-closed-by-user':
+    case 'cancelled-popup-request':
+    case 'web-context-canceled':
+    case 'web-context-cancelled':
+    case 'canceled':
+      return null;
+    case 'operation-not-allowed':
+      return 'ระบบยังไม่เปิดให้เข้าสู่ระบบด้วย Google';
+    case 'popup-blocked':
+      return 'เบราว์เซอร์บล็อกหน้าต่างเข้าสู่ระบบ อนุญาตป๊อปอัปแล้วลองใหม่';
+    case 'account-exists-with-different-credential':
+      return 'อีเมลนี้สมัครด้วยรหัสผ่านไว้แล้ว เข้าสู่ระบบด้วยอีเมลและรหัสผ่านแทน';
+    default:
+      return authErrorMessage(code);
+  }
+}

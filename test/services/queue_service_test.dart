@@ -241,4 +241,26 @@ void main() {
     final history = await firestore.collection('queueHistory').get();
     expect(history.docs.single.data()['onTheWayAt'], isA<Timestamp>());
   });
+
+  test('a booking carries the name and phone the shop can call', () async {
+    await addShop();
+    await firestore.collection('users').doc('me').set({
+      'displayName': 'สมชาย',
+      'phone': '081-234-5678',
+    });
+
+    final contact = await queues.customerContact('me');
+    await queues.bookQueue(
+      uid: 'me',
+      shopId: 'teenoi',
+      zone: 'ในร้าน',
+      partySize: 2,
+      customerName: contact.name,
+      customerPhone: contact.phone,
+    );
+
+    final queue = (await queues.queueOf('me').get()).data()!;
+    expect(queue['customerName'], 'สมชาย');
+    expect(queue['customerPhone'], '081-234-5678');
+  });
 }

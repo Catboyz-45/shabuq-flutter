@@ -82,14 +82,28 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openBannerShop(String shopId) async {
-    final shop = await _shopService.watchShop(shopId).first;
+    final shop = await _shopService.getShop(shopId);
     if (!mounted || shop == null || !shop.active) return;
     await _openShop(shop);
   }
 
+  /// Minutes until a new booking would be called, or null before the
+  /// shop's queue count has loaded.
+  int? _waitMinutes(Shop shop) {
+    final waiting = _waiting[shop.id];
+    if (waiting == null) return null;
+    return waiting == 0
+        ? 0
+        : estimateWaitMinutes(
+          ahead: waiting,
+          minutesPerQueue: shop.minutesPerQueue,
+        );
+  }
+
+  /// Search and filter, then open shops with the shortest wait first.
   List<Shop> _visible(List<Shop> shops) {
     final query = _query.trim().toLowerCase();
-    return [
+    final matching = [
       for (final shop in shops)
         if ((query.isEmpty ||
                 shop.name.toLowerCase().contains(query) ||
@@ -104,6 +118,13 @@ class _HomeScreenState extends State<HomeScreen> {
             })
           shop,
     ];
+    int rank(Shop shop) =>
+        shop.canBook ? (_waitMinutes(shop) ?? 100000) : 1000000;
+    final order = {for (final (index, shop) in shops.indexed) shop.id: index};
+    return matching..sort((a, b) {
+      final byWait = rank(a).compareTo(rank(b));
+      return byWait != 0 ? byWait : order[a.id]!.compareTo(order[b.id]!);
+    });
   }
 
   @override
@@ -248,6 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: _ShopRow(
                               shop: visible[index],
                               waitingCount: _waiting[visible[index].id],
+                              waitMinutes: _waitMinutes(visible[index]),
                               onTap: () => _openShop(visible[index]),
                             ),
                           ),
@@ -564,6 +586,7 @@ class _ShopRow extends StatelessWidget {
   const _ShopRow({
     required this.shop,
     required this.waitingCount,
+    required this.waitMinutes,
     required this.onTap,
   });
 
@@ -571,6 +594,9 @@ class _ShopRow extends StatelessWidget {
 
   /// Null until the first count arrives.
   final int? waitingCount;
+
+  /// Estimated minutes for a new booking; null until the count arrives.
+  final int? waitMinutes;
   final VoidCallback onTap;
 
   @override
@@ -641,7 +667,8 @@ class _ShopRow extends StatelessWidget {
                               foreground: scheme.onSurface,
                             )
                             : StatusPill(
-                              label: 'รอ $waitingCount คิว',
+                              label:
+                                  'รอ ~$waitMinutes นาที • $waitingCount คิว',
                               background: scheme.secondaryContainer,
                               foreground: scheme.onSecondaryContainer,
                             ),

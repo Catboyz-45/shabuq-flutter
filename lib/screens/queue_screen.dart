@@ -11,6 +11,7 @@ import '../services/shop_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/maps.dart';
 import '../utils/queue_position.dart';
+import '../widgets/booking_flow.dart';
 import '../widgets/brand.dart';
 import '../widgets/motion.dart';
 
@@ -70,6 +71,66 @@ class _QueueScreenState extends State<QueueScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('ยกเลิกคิวไม่สำเร็จ กรุณาลองใหม่')),
       );
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Books the same shop, zone and party size as a past visit.
+  Future<void> _rebook(String uid, QueueEntry item) async {
+    final shop = await _shopService.getShop(item.shopId);
+    if (!mounted) return;
+    final problem =
+        shop == null || !shop.active
+            ? 'ร้านนี้ปิดให้บริการแล้ว'
+            : !shop.acceptingQueues
+            ? 'ร้านปิดรับคิวชั่วคราว ลองใหม่ภายหลัง'
+            : !shop.bookableZones.contains(item.zone)
+            ? 'ร้านไม่มีโซน ${item.zone} แล้ว เลือกโซนใหม่ที่หน้าร้าน'
+            : null;
+    if (problem != null) {
+      _showMessage(problem);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('จองอีกครั้ง'),
+            content: Text(
+              'รับคิว ${shop!.name}\n${item.zone} • ${item.partySize} คน',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('ไม่'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('รับคิว'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final label = await BookingFlow(_queueService).book(
+        context,
+        uid: uid,
+        shopId: item.shopId,
+        zone: item.zone,
+        partySize: item.partySize,
+      );
+      if (label != null) _showMessage('ได้คิว $label แล้ว');
+    } on StateError catch (error) {
+      _showMessage(error.message);
+    } on FirebaseException {
+      _showMessage('รับคิวไม่สำเร็จ กรุณาลองใหม่');
     }
   }
 
@@ -147,6 +208,10 @@ class _QueueScreenState extends State<QueueScreen> {
                         _QueueHistory(
                           stream: _history!,
                           hasActiveQueue: queue != null,
+                          onRebook:
+                              queue == null
+                                  ? (item) => _rebook(uid, item)
+                                  : null,
                         ),
                       ],
                     );
@@ -1005,10 +1070,18 @@ class _StaleBanner extends StatelessWidget {
 }
 
 class _QueueHistory extends StatelessWidget {
-  const _QueueHistory({required this.stream, required this.hasActiveQueue});
+  const _QueueHistory({
+    required this.stream,
+    required this.hasActiveQueue,
+    required this.onRebook,
+  });
 
   final Stream<List<QueueEntry>> stream;
   final bool hasActiveQueue;
+
+  /// Books the same shop, zone and party size again; null while the
+  /// customer already has a queue.
+  final ValueChanged<QueueEntry>? onRebook;
 
   @override
   Widget build(BuildContext context) {
@@ -1061,7 +1134,10 @@ class _QueueHistory extends StatelessWidget {
             for (final (index, item) in items.indexed)
               FadeSlideIn(
                 delay: Duration(milliseconds: 50 * min(index, 6)),
-                child: _HistoryRow(item: item),
+                child: _HistoryRow(
+                  item: item,
+                  onRebook: onRebook == null ? null : () => onRebook!(item),
+                ),
               ),
           ],
         );
@@ -1071,9 +1147,10 @@ class _QueueHistory extends StatelessWidget {
 }
 
 class _HistoryRow extends StatelessWidget {
-  const _HistoryRow({required this.item});
+  const _HistoryRow({required this.item, required this.onRebook});
 
   final QueueEntry item;
+  final VoidCallback? onRebook;
 
   @override
   Widget build(BuildContext context) {
@@ -1125,10 +1202,26 @@ class _HistoryRow extends StatelessWidget {
               ],
             ),
           ),
-          StatusPill(
-            label: label,
-            background: background,
-            foreground: foreground,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              StatusPill(
+                label: label,
+                background: background,
+                foreground: foreground,
+              ),
+              if (onRebook != null)
+                TextButton.icon(
+                  onPressed: onRebook,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.replay_rounded, size: 18),
+                  label: const Text('จองอีกครั้ง'),
+                ),
+            ],
           ),
         ],
       ),

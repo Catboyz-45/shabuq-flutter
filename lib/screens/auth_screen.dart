@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -86,6 +87,35 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) setState(() => _error = authErrorMessage(e.code));
+    } on FirebaseException {
+      // Signed in, but saving the e-mail failed; the next sign-in retries.
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Google sign-in: a popup on the web, the system browser on phones.
+  /// Requires the Google provider to be enabled in the Firebase console.
+  Future<void> _signInWithGoogle() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      final provider = GoogleAuthProvider()..addScope('email');
+      final credential =
+          kIsWeb
+              ? await FirebaseAuth.instance.signInWithPopup(provider)
+              : await FirebaseAuth.instance.signInWithProvider(provider);
+      await _saveEmail(
+        credential.user,
+        isNew: credential.additionalUserInfo?.isNewUser ?? false,
+      );
+    } on FirebaseAuthException catch (e) {
+      final message = googleSignInErrorMessage(e.code);
+      if (mounted && message != null) setState(() => _error = message);
     } on FirebaseException {
       // Signed in, but saving the e-mail failed; the next sign-in retries.
     } finally {
@@ -278,6 +308,30 @@ class _AuthScreenState extends State<AuthScreen> {
                           )
                           : Text(action),
                 ),
+                if (_mode != _Mode.reset) ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'หรือ',
+                          style: text.bodySmall?.copyWith(color: Palette.muted),
+                        ),
+                      ),
+                      const Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton(
+                    onPressed: _busy ? null : _signInWithGoogle,
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                    child: const Text('ดำเนินการต่อด้วยบัญชี Google'),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,

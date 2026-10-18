@@ -453,6 +453,7 @@ service cloud.firestore {
           'queueDate',
           'walkIn',
           'customerName',
+          'customerPhone',
           'status',
           'createdAt'
         ]) &&
@@ -476,6 +477,9 @@ service cloud.firestore {
         data.queueLabel.size() <= 8 &&
         data.customerName is string &&
         data.customerName.size() <= 60 &&
+        // Optional, so the shop can call; digits and dashes only.
+        data.get('customerPhone', '') is string &&
+        data.get('customerPhone', '').matches('^[0-9-]{0,20}$') &&
         data.status == 'waiting' &&
         data.createdAt == request.time &&
         getAfter(
@@ -601,6 +605,7 @@ service cloud.firestore {
           'queueDate',
           'walkIn',
           'customerName',
+          'customerPhone',
           'status',
           'createdAt',
           'calledAt',

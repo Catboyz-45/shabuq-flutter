@@ -95,6 +95,8 @@ class QueueService {
     required String shopId,
     required String zone,
     required int partySize,
+    String customerName = '',
+    String customerPhone = '',
   }) {
     return _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(queueOf(uid));
@@ -108,6 +110,8 @@ class QueueService {
         shopId: shopId,
         zone: zone,
         partySize: partySize,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
       );
     });
   }
@@ -118,6 +122,7 @@ class QueueService {
     required String zone,
     required int partySize,
     required String customerName,
+    String customerPhone = '',
   }) {
     return _firestore.runTransaction((transaction) {
       final ticketId = _firestore.collection('queueTickets').doc().id;
@@ -130,6 +135,7 @@ class QueueService {
         zone: zone,
         partySize: partySize,
         customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
       );
     });
   }
@@ -143,6 +149,7 @@ class QueueService {
     required int partySize,
     String? ticketId,
     String customerName = '',
+    String customerPhone = '',
   }) async {
     final shopReference = _firestore.collection('shops').doc(shopId);
     final shop = (await transaction.get(shopReference)).data();
@@ -187,6 +194,7 @@ class QueueService {
       'queueDate': today,
       'walkIn': userId.isEmpty,
       'customerName': customerName,
+      if (customerPhone.isNotEmpty) 'customerPhone': customerPhone,
       'status': 'waiting',
       'createdAt': createdAt,
     });
@@ -199,6 +207,22 @@ class QueueService {
       'createdAt': createdAt,
     });
     return label;
+  }
+
+  /// The customer's saved name and phone, used to fill a new booking.
+  Future<({String name, String phone})> customerContact(String uid) async {
+    final data = (await _firestore.collection('users').doc(uid).get()).data();
+    return (
+      name: (data?['displayName'] as String? ?? '').trim(),
+      phone: (data?['phone'] as String? ?? '').trim(),
+    );
+  }
+
+  /// Remembers the customer's phone on their profile for next time.
+  Future<void> saveCustomerPhone(String uid, String phone) {
+    return _firestore.collection('users').doc(uid).set({
+      'phone': phone,
+    }, SetOptions(merge: true));
   }
 
   /// Tells the shop a called customer is on their way.

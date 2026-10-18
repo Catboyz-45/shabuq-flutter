@@ -130,6 +130,29 @@ await expectStatus('booking dated today (Bangkok) succeeds', commit(customer.tok
 await expectStatus('customer bumps a counter alone', commit(customer.token, [update('shops/wiyaki/queueCounters/A', { date: s(today), last: i(1) })]), 403);
 await expectStatus('customer calls a queue', commit(customer.token, [update(`queues/${guest.uid}`, { status: s('called') }, [], ['status'])]), 403);
 
+console.log('— Contact on bookings');
+const bookAs = (user, ticketId, number, phone) => [
+  update('shops/pho/queueCounters/A', { date: s(today), last: i(number) }),
+  update(
+    `queues/${user.uid}`,
+    {
+      userId: s(user.uid), shopId: s('pho'), shopName: s('Pho Shabu'),
+      zone: s('ในร้าน'), zoneCode: s('A'), partySize: i(2), ticketId: s(ticketId),
+      queueNumber: i(number), queueLabel: s(`A00${number}`), queueDate: s(today),
+      walkIn: b(false), customerName: s('ลูกค้า'), customerPhone: s(phone),
+      status: s('waiting'),
+    },
+    now('createdAt'),
+  ),
+  update(
+    `queueTickets/${ticketId}`,
+    { shopId: s('pho'), zone: s('ในร้าน'), queueLabel: s(`A00${number}`), queueDate: s(today), status: s('waiting') },
+    now('createdAt'),
+  ),
+];
+await expectStatus('booking with a script as phone is refused', commit(impostor.token, bookAs(impostor, 'ruletest3', 2, '<script>')), 403);
+await expectStatus('booking with a phone number succeeds', commit(impostor.token, bookAs(impostor, 'ruletest4', 2, '081-234-5678')), 200);
+
 console.log('— On the way');
 const onTheWay = (token, uid) =>
   commit(token, [update(`queues/${uid}`, {}, now('onTheWayAt'), [])]);

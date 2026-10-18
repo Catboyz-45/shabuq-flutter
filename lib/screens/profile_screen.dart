@@ -46,11 +46,10 @@ class ProfileScreen extends StatelessWidget {
             const _ThemePicker(),
             const SizedBox(height: 22),
             const _GroupLabel('ช่วยเหลือ'),
-            Container(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-              ),
+            Material(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
                   // หน้าข้อความ แอดมินแก้ได้จากหน้า Super Admin

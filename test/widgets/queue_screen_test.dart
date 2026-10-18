@@ -96,6 +96,32 @@ void main() {
     expect(find.text('คิวปัจจุบัน'), findsNothing);
   });
 
+  testWidgets('books the same shop again from the history', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await staff.closeQueue(queueId: 'me', outcome: 'completed');
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('จองอีกครั้ง'));
+    // The fake Firestore answers on a timer, so let time pass.
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'รับคิว'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    // No phone saved yet, so the app asks once; skip it.
+    await tester.tap(find.text('ข้าม รับคิวโดยไม่ให้เบอร์'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    final queue = (await queues.queueOf('me').get()).data()!;
+    expect(queue['shopId'], 'teenoi');
+    expect(queue['partySize'], 2);
+    expect(queue.containsKey('customerPhone'), isFalse);
+    expect(find.text('จองอีกครั้ง'), findsNothing);
+  });
+
   testWidgets('cancels after confirming', (tester) async {
     await pumpScreen(tester);
 

@@ -1,14 +1,19 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/queue_entry.dart';
 import '../models/shop.dart';
 import '../services/admin_service.dart';
 import '../services/queue_service.dart';
 import '../services/shop_service.dart';
+import '../utils/input_formatters.dart';
 import '../utils/queue_position.dart';
 import '../theme/app_theme.dart';
 import '../widgets/brand.dart';
@@ -38,13 +43,166 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
   late final Stream<List<QueueEntry>> _queues;
   String? _callingZone;
 
+  /// Queues closed in the last few seconds: hidden from the board and only
+  /// written to Firestore when their undo window ends.
+  final _pendingCloses = <String, ({Timer timer, String outcome})>{};
+
+  /// Hidden from the board: pending closes and closes being saved.
+  final _hidden = <String>{};
+
+  /// The latest queues, to find the one "call next" picked.
+  List<QueueEntry> _latest = const [];
+
+  late final _actions = _BoardActions(
+    setStatus: _setStatusWithUndo,
+    close: _closeWithUndo,
+  );
+
+  static const _undoWindow = Duration(seconds: 5);
+  static const _soundKey = 'staff.newQueueSound';
+
+  /// Plays a chime when a customer books from the app.
+  final _player = AudioPlayer();
+  bool _soundOn = true;
+
+  /// Queue ids in the previous snapshot, to spot new bookings.
+  Set<String>? _knownIds;
+
+  /// Zone the one-tap walk-in buttons add to.
+  String? _walkInZone;
+
   String get _shopId => widget.admin.shopId;
+
+  void _loadSoundSetting() async {
+    try {
+      final saved = (await SharedPreferences.getInstance()).getBool(_soundKey);
+      if (saved != null && mounted) setState(() => _soundOn = saved);
+    } on Exception {
+      // Keep the default when storage is unavailable.
+    }
+  }
+
+  Future<void> _toggleSound() async {
+    setState(() => _soundOn = !_soundOn);
+    if (_soundOn) _playChime();
+    try {
+      await (await SharedPreferences.getInstance()).setBool(
+        _soundKey,
+        _soundOn,
+      );
+    } on Exception {
+      // Remembering the choice is a convenience.
+    }
+  }
+
+  void _playChime() {
+    _player.play(AssetSource('sounds/new_queue.wav')).catchError((Object _) {
+      // Browsers may block sound until the page has been tapped once.
+    });
+  }
+
+  /// Called after a snapshot that holds new bookings from the app.
+  void _announceNewQueues(int count) {
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    if (_soundOn) _playChime();
+  }
+
+  Future<void> _quickWalkIn(String zone, int partySize) async {
+    try {
+      final label = await _queueService.addWalkIn(
+        shopId: _shopId,
+        zone: zone,
+        partySize: partySize,
+        customerName: '',
+      );
+      _showMessage('ออกคิว walk-in $label • $partySize คน');
+    } on StateError catch (error) {
+      _showMessage(error.message);
+    } on FirebaseException {
+      _showMessage('เพิ่มคิวไม่สำเร็จ กรุณาลองใหม่');
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    // Leaving the board ends every undo window now.
+    for (final entry in _pendingCloses.entries) {
+      entry.value.timer.cancel();
+      widget.adminService.closeQueue(
+        queueId: entry.key,
+        outcome: entry.value.outcome,
+      );
+    }
+    super.dispose();
+  }
+
+  void _showUndo(String message, VoidCallback onUndo) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: _undoWindow,
+          action: SnackBarAction(label: 'เลิกทำ', onPressed: onUndo),
+        ),
+      );
+  }
+
+  static String _statusName(String status) => switch (status) {
+    'called' => 'เรียกแล้ว',
+    'serving' => 'กำลังทาน',
+    _ => 'รอคิว',
+  };
+
+  Future<void> _setStatusWithUndo(QueueEntry queue, String status) async {
+    final previous = queue.status;
+    await widget.adminService.setQueueStatus(queueId: queue.id, status: status);
+    _showUndo('${queue.queueLabel}: ${_statusName(status)}', () {
+      widget.adminService
+          .setQueueStatus(queueId: queue.id, status: previous)
+          .catchError((Object _) => _showMessage('เลิกทำไม่สำเร็จ'));
+    });
+  }
+
+  void _closeWithUndo(QueueEntry queue, String outcome) {
+    final name = switch (outcome) {
+      'completed' => 'เสร็จสิ้น',
+      'no_show' => 'ไม่มาตามคิว',
+      _ => 'ยกเลิกคิว',
+    };
+    setState(() {
+      _hidden.add(queue.id);
+      _pendingCloses[queue.id] = (
+        timer: Timer(_undoWindow, () => _commitClose(queue.id, outcome)),
+        outcome: outcome,
+      );
+    });
+    _showUndo('${queue.queueLabel}: $name', () {
+      _pendingCloses.remove(queue.id)?.timer.cancel();
+      if (mounted) setState(() => _hidden.remove(queue.id));
+    });
+  }
+
+  Future<void> _commitClose(String queueId, String outcome) async {
+    _pendingCloses.remove(queueId);
+    try {
+      await widget.adminService.closeQueue(queueId: queueId, outcome: outcome);
+    } on Object {
+      if (!mounted) return;
+      setState(() => _hidden.remove(queueId));
+      _showMessage('ปิดคิวไม่สำเร็จ กรุณาลองใหม่');
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _shop = _shopService.watchShop(_shopId);
     _queues = widget.adminService.watchShopQueues(_shopId);
+    _loadSoundSetting();
   }
 
   void _showMessage(String message) {
@@ -61,9 +219,21 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
         shopId: _shopId,
         zone: zone,
       );
-      _showMessage(
-        label == null ? 'ไม่มีคิวรอในโซน $zone' : 'เรียกคิว $label แล้ว',
-      );
+      final called =
+          _latest
+              .where((queue) => queue.queueLabel == label && queue.zone == zone)
+              .firstOrNull;
+      if (label == null) {
+        _showMessage('ไม่มีคิวรอในโซน $zone');
+      } else if (called == null) {
+        _showMessage('เรียกคิว $label แล้ว');
+      } else {
+        _showUndo('เรียกคิว $label แล้ว', () {
+          widget.adminService
+              .setQueueStatus(queueId: called.id, status: 'waiting')
+              .catchError((Object _) => _showMessage('เลิกทำไม่สำเร็จ'));
+        });
+      }
     } on FirebaseException {
       _showMessage('เรียกคิวไม่สำเร็จ กรุณาลองใหม่');
     } finally {
@@ -146,6 +316,7 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
         zone: result.zone,
         partySize: result.partySize,
         customerName: result.name,
+        customerPhone: result.phone,
       );
       _showMessage('เพิ่มคิว walk-in $label แล้ว');
     } on StateError catch (error) {
@@ -180,7 +351,33 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
             final waiting = <QueueEntry>[];
             final called = <QueueEntry>[];
             final serving = <QueueEntry>[];
+            _latest = queueSnapshot.data!;
+            final ids = {for (final queue in _latest) queue.id};
+            final known = _knownIds;
+            _knownIds = ids;
+            if (known != null) {
+              final fresh =
+                  _latest
+                      .where(
+                        (queue) =>
+                            !known.contains(queue.id) &&
+                            !queue.walkIn &&
+                            queue.status == 'waiting',
+                      )
+                      .length;
+              if (fresh > 0) {
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _announceNewQueues(fresh),
+                );
+              }
+            }
+            _hidden.removeWhere(
+              (id) =>
+                  !_pendingCloses.containsKey(id) &&
+                  !_latest.any((queue) => queue.id == id),
+            );
             for (final queue in queueSnapshot.data!) {
+              if (_hidden.contains(queue.id)) continue;
               if (queue.isStale(today)) {
                 stale.add(queue);
               } else {
@@ -201,8 +398,18 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
               waitingCount: waiting.length,
               accepting: accepting,
               onAccepting: _setAccepting,
-              onWalkIn: () => _addWalkIn(zones),
+              soundOn: _soundOn,
+              onToggleSound: _toggleSound,
               onRedeem: _redeemCoupon,
+            );
+            final walkInZone =
+                zones.contains(_walkInZone) ? _walkInZone! : zones.first;
+            final walkInBar = _WalkInBar(
+              zones: zones,
+              zone: walkInZone,
+              onZone: (zone) => setState(() => _walkInZone = zone),
+              onPartySize: (size) => _quickWalkIn(walkInZone, size),
+              onMore: () => _addWalkIn(zones),
             );
             final staleBanner =
                 stale.isEmpty
@@ -250,7 +457,7 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                 top: callButtons,
                 empty: 'ไม่มีคิวรอ',
                 queues: waiting,
-                adminService: widget.adminService,
+                actions: _actions,
               ),
               _BoardColumn(
                 title: 'เรียกแล้ว รอลูกค้ามา',
@@ -258,7 +465,7 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                 color: Palette.ember,
                 empty: 'ยังไม่ได้เรียกคิว',
                 queues: called,
-                adminService: widget.adminService,
+                actions: _actions,
               ),
               _BoardColumn(
                 title: 'กำลังทาน',
@@ -266,7 +473,7 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                 color: Palette.mint,
                 empty: 'ยังไม่มีโต๊ะที่กำลังทาน',
                 queues: serving,
-                adminService: widget.adminService,
+                actions: _actions,
                 bottom: closeAll,
               ),
             ];
@@ -279,6 +486,8 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                     child: Column(
                       children: [
                         header,
+                        const SizedBox(height: 14),
+                        walkInBar,
                         if (staleBanner != null) ...[
                           const SizedBox(height: 14),
                           staleBanner,
@@ -304,6 +513,8 @@ class _ShopQueueAdminState extends State<ShopQueueAdmin> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                   children: [
                     header,
+                    const SizedBox(height: 12),
+                    walkInBar,
                     if (staleBanner != null) ...[
                       const SizedBox(height: 12),
                       staleBanner,
@@ -329,7 +540,8 @@ class _BoardHeader extends StatelessWidget {
     required this.waitingCount,
     required this.accepting,
     required this.onAccepting,
-    required this.onWalkIn,
+    required this.soundOn,
+    required this.onToggleSound,
     required this.onRedeem,
   });
 
@@ -337,7 +549,8 @@ class _BoardHeader extends StatelessWidget {
   final int waitingCount;
   final bool accepting;
   final ValueChanged<bool> onAccepting;
-  final VoidCallback onWalkIn;
+  final bool soundOn;
+  final VoidCallback onToggleSound;
   final VoidCallback onRedeem;
 
   @override
@@ -400,11 +613,18 @@ class _BoardHeader extends StatelessWidget {
                 ),
               ),
             ),
-            OutlinedButton.icon(
-              onPressed: onWalkIn,
-              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-              icon: const Icon(Icons.person_add_alt_1_rounded),
-              label: const Text('walk-in'),
+            IconButton.outlined(
+              tooltip: soundOn ? 'ปิดเสียงแจ้งคิวใหม่' : 'เปิดเสียงแจ้งคิวใหม่',
+              onPressed: onToggleSound,
+              style: IconButton.styleFrom(
+                fixedSize: const Size.square(48),
+                side: BorderSide(color: scheme.outlineVariant, width: 1.5),
+              ),
+              icon: Icon(
+                soundOn
+                    ? Icons.notifications_active_outlined
+                    : Icons.notifications_off_outlined,
+              ),
             ),
             OutlinedButton.icon(
               onPressed: onRedeem,
@@ -538,7 +758,7 @@ class _BoardColumn extends StatelessWidget {
     required this.color,
     required this.empty,
     required this.queues,
-    required this.adminService,
+    required this.actions,
     this.top = const [],
     this.bottom,
   });
@@ -548,7 +768,7 @@ class _BoardColumn extends StatelessWidget {
   final Color color;
   final String empty;
   final List<QueueEntry> queues;
-  final AdminService adminService;
+  final _BoardActions actions;
   final List<Widget> top;
   final Widget? bottom;
 
@@ -559,7 +779,7 @@ class _BoardColumn extends StatelessWidget {
     color: color,
     empty: empty,
     queues: queues,
-    adminService: adminService,
+    actions: actions,
     top: top,
     bottom: bottom,
   )._build(scroll: true);
@@ -590,7 +810,7 @@ class _BoardColumn extends StatelessWidget {
                 key: ValueKey('${queue.id}-${queue.status}'),
                 offset: -10,
                 duration: const Duration(milliseconds: 320),
-                child: _QueueCard(queue: queue, adminService: adminService),
+                child: _QueueCard(queue: queue, actions: actions),
               ),
             ),
         ];
@@ -650,10 +870,10 @@ class _BoardColumn extends StatelessWidget {
 }
 
 class _QueueCard extends StatefulWidget {
-  const _QueueCard({required this.queue, required this.adminService});
+  const _QueueCard({required this.queue, required this.actions});
 
   final QueueEntry queue;
-  final AdminService adminService;
+  final _BoardActions actions;
 
   @override
   State<_QueueCard> createState() => _QueueCardState();
@@ -703,19 +923,18 @@ class _QueueCardState extends State<_QueueCard> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _setStatus(String status) => _run(
-    () => widget.adminService.setQueueStatus(
-      queueId: widget.queue.id,
-      status: status,
-    ),
-  );
+  Future<void> _callCustomer(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone.replaceAll('-', ''));
+    if (!await launchUrl(uri)) {
+      _showError('โทรออกไม่ได้จากเครื่องนี้ เบอร์ $phone');
+    }
+  }
 
-  Future<void> _close(String outcome) => _run(
-    () => widget.adminService.closeQueue(
-      queueId: widget.queue.id,
-      outcome: outcome,
-    ),
-  );
+  Future<void> _setStatus(String status) =>
+      _run(() => widget.actions.setStatus(widget.queue, status));
+
+  /// Closing waits a few seconds so it can be undone; see _BoardActions.
+  void _close(String outcome) => widget.actions.close(widget.queue, outcome);
 
   @override
   Widget build(BuildContext context) {
@@ -733,6 +952,15 @@ class _QueueCardState extends State<_QueueCard> {
       width: 76,
       child: Text(queue.queueLabel, style: AppFonts.numbers(fontSize: 26)),
     );
+    final phone = queue.customerPhone.trim();
+    final call =
+        phone.isEmpty
+            ? null
+            : IconButton(
+              tooltip: 'โทรหาลูกค้า $phone',
+              onPressed: () => _callCustomer(phone),
+              icon: Icon(Icons.call_rounded, color: scheme.tertiary),
+            );
     final busy =
         _saving
             ? const Padding(
@@ -769,6 +997,7 @@ class _QueueCardState extends State<_QueueCard> {
                         style: TextStyle(color: scheme.onSurfaceVariant),
                       ),
                     ),
+                    if (call != null) call,
                     if (queue.onTheWayAt != null) ...[
                       StatusPill(
                         label: 'กำลังเดินทางมา',
@@ -927,6 +1156,7 @@ class _QueueCardState extends State<_QueueCard> {
             if (busy != null)
               const SizedBox(width: 80, child: LinearProgressIndicator())
             else ...[
+              if (call != null) call,
               IconButton(
                 tooltip: 'ยกเลิกคิว',
                 onPressed: () => _close('cancelled'),
@@ -959,11 +1189,12 @@ class _QueueCardState extends State<_QueueCard> {
 }
 
 class _WalkIn {
-  const _WalkIn(this.zone, this.partySize, this.name);
+  const _WalkIn(this.zone, this.partySize, this.name, this.phone);
 
   final String zone;
   final int partySize;
   final String name;
+  final String phone;
 }
 
 class _WalkInDialog extends StatefulWidget {
@@ -977,12 +1208,14 @@ class _WalkInDialog extends StatefulWidget {
 
 class _WalkInDialogState extends State<_WalkInDialog> {
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   late String _zone = widget.zones.first;
   int _party = 2;
 
   @override
   void dispose() {
     _nameController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -999,6 +1232,15 @@ class _WalkInDialogState extends State<_WalkInDialog> {
             maxLength: 60,
             decoration: const InputDecoration(
               labelText: 'ชื่อลูกค้า (ไม่บังคับ)',
+            ),
+          ),
+          TextField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            maxLength: phoneMaxLength,
+            inputFormatters: [phoneCharacters],
+            decoration: const InputDecoration(
+              labelText: 'เบอร์โทร (ไม่บังคับ)',
             ),
           ),
           DropdownButtonFormField<String>(
@@ -1041,11 +1283,95 @@ class _WalkInDialogState extends State<_WalkInDialog> {
           onPressed:
               () => Navigator.pop(
                 context,
-                _WalkIn(_zone, _party, _nameController.text),
+                _WalkIn(
+                  _zone,
+                  _party,
+                  _nameController.text,
+                  _phoneController.text,
+                ),
               ),
           child: const Text('ออกเลขคิว'),
         ),
       ],
+    );
+  }
+}
+
+/// What the queue cards can do, provided by the board so it can offer undo.
+class _BoardActions {
+  const _BoardActions({required this.setStatus, required this.close});
+
+  final Future<void> Function(QueueEntry queue, String status) setStatus;
+  final void Function(QueueEntry queue, String outcome) close;
+}
+
+/// One-tap walk-ins: pick the party size and the number is issued at once.
+/// "อื่นๆ" opens the full form for larger groups, a name or a phone.
+class _WalkInBar extends StatelessWidget {
+  const _WalkInBar({
+    required this.zones,
+    required this.zone,
+    required this.onZone,
+    required this.onPartySize,
+    required this.onMore,
+  });
+
+  final List<String> zones;
+  final String zone;
+  final ValueChanged<String> onZone;
+  final ValueChanged<int> onPartySize;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(right: 4),
+            child: Text(
+              'walk-in กี่คน?',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (zones.length > 1)
+            for (final option in zones)
+              ChoiceChip(
+                label: Text(option),
+                selected: option == zone,
+                onSelected: (_) => onZone(option),
+              ),
+          for (var size = 1; size <= 6; size++)
+            SizedBox.square(
+              dimension: 48,
+              child: FilledButton.tonal(
+                onPressed: () => onPartySize(size),
+                style: FilledButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size.square(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  '$size',
+                  semanticsLabel: 'walk-in $size คน',
+                  style: AppFonts.numbers(fontSize: 20),
+                ),
+              ),
+            ),
+          TextButton(onPressed: onMore, child: const Text('อื่นๆ…')),
+        ],
+      ),
     );
   }
 }

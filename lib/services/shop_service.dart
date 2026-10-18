@@ -20,6 +20,12 @@ class ShopService {
     });
   }
 
+  /// One read of a shop, or null if it doesn't exist.
+  Future<Shop?> getShop(String shopId) async {
+    final snapshot = await _firestore.collection('shops').doc(shopId).get();
+    return snapshot.exists ? Shop.fromSnapshot(snapshot) : null;
+  }
+
   Stream<Shop?> watchShop(String shopId) {
     return _firestore
         .collection('shops')
