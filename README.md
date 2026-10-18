@@ -126,7 +126,23 @@ tool/
 
 - เว็บ: ใช้ได้ทันทีบน `localhost` และโดเมน Firebase Hosting ถ้าเอาขึ้นโดเมนอื่นต้องเพิ่มใน Authentication → Settings → Authorized domains
 - iOS: ตั้งค่าแล้ว (`CLIENT_ID`/`REVERSED_CLIENT_ID` ใน `GoogleService-Info.plist` และ URL scheme ใน `ios/Runner/Info.plist`)
-- Android: เพิ่ม SHA-1/SHA-256 ของ debug keystore (ซึ่งใช้ build release ด้วยตอนนี้) แล้ว และ `google-services.json` มี OAuth client ครบ ถ้าเปลี่ยนไปใช้ keystore สำหรับ release จริง ต้องเพิ่ม SHA ของ keystore นั้นใน Project settings → Your apps → Android ด้วย
+- Android: เพิ่ม SHA-1/SHA-256 ของ debug keystore แล้ว และ `google-services.json` มี OAuth client ครบ ถ้ายังไม่มี `android/key.properties` build release จะเซ็นด้วย debug key
+- Android release (ก่อนขึ้น Play Store): สร้าง keystore เก็บไว้นอกโปรเจกต์และสำรองไว้ (ทำหายแล้วอัปเดตแอปเดิมไม่ได้)
+
+  ```bash
+  keytool -genkey -v -keystore ~/shabuq-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+  ```
+
+  แล้วสร้าง `android/key.properties` (ไฟล์นี้อยู่ใน `.gitignore` ห้าม commit)
+
+  ```properties
+  storePassword=<รหัสที่ตั้งตอน keytool>
+  keyPassword=<รหัสที่ตั้งตอน keytool>
+  keyAlias=upload
+  storeFile=/Users/<ชื่อผู้ใช้>/shabuq-upload.jks
+  ```
+
+  จากนั้นรัน `keytool -list -v -keystore ~/shabuq-upload.jks -alias upload` แล้วเพิ่ม SHA-1/SHA-256 ที่ได้ใน Firebase Console → Project settings → Your apps → Android ถ้าใช้ Play App Signing ให้เพิ่ม SHA ของ "App signing key" จาก Play Console ด้วย ไม่งั้น Google sign-in ในแอปที่โหลดจาก Play Store จะใช้ไม่ได้
 
 ### การเริ่มต้น Super Admin
 
